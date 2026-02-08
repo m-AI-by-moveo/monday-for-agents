@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monday for Agents - Architecture</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #0a0a1a;
+    color: #e2e8f0;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  .page {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 60px 40px;
+  }
+
+  /* ---- Header ---- */
+  .header {
+    text-align: center;
+    margin-bottom: 60px;
+  }
+  .header h1 {
+    font-size: 48px;
+    font-weight: 800;
+    background: linear-gradient(135deg, #6366f1, #a855f7, #ec4899);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 12px;
+    letter-spacing: -1px;
+  }
+  .header .subtitle {
+    font-size: 20px;
+    color: #94a3b8;
+    font-weight: 300;
+    max-width: 700px;
+    margin: 0 auto;
+    line-height: 1.6;
+  }
+
+  /* ---- Tech Stack Bar ---- */
+  .tech-stack {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 60px;
+  }
+  .tech-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    padding: 10px 18px;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.3s;
+  }
+  .tech-badge:hover {
+    background: rgba(255,255,255,0.1);
+    border-color: rgba(255,255,255,0.2);
+    transform: translateY(-2px);
+  }
+  .tech-badge .dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* ---- Architecture Diagram ---- */
+  .diagram {
+    position: relative;
+    margin-bottom: 60px;
+  }
+
+  /* Layers */
+  .layer {
+    position: relative;
+    margin-bottom: 24px;
+  }
+  .layer-label {
+    position: absolute;
+    left: -8px;
+    top: 50%;
+    transform: translateY(-50%) rotate(-90deg);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: #475569;
+    white-space: nowrap;
+  }
+
+  .layer-content {
+    margin-left: 40px;
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+
+  /* Cards */
+  .card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    padding: 24px;
+    min-width: 200px;
+    max-width: 320px;
+    flex: 1;
+    transition: all 0.3s;
+    position: relative;
+    overflow: hidden;
+  }
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    border-radius: 16px 16px 0 0;
+  }
+  .card:hover {
+    background: rgba(255,255,255,0.06);
+    border-color: rgba(255,255,255,0.15);
+    transform: translateY(-3px);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+  }
+
+  .card-icon {
+    font-size: 32px;
+    margin-bottom: 12px;
+    display: block;
+  }
+  .card h3 {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .card .role {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+  }
+  .card p {
+    font-size: 13px;
+    color: #94a3b8;
+    line-height: 1.5;
+  }
+  .card .port {
+    display: inline-block;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 11px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 6px;
+    padding: 3px 8px;
+    margin-top: 8px;
+    color: #64748b;
+  }
+
+  /* Color themes */
+  .card.human::before { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+  .card.human h3, .card.human .role { color: #60a5fa; }
+
+  .card.slack::before { background: linear-gradient(90deg, #4A154B, #E01E5A); }
+  .card.slack h3, .card.slack .role { color: #E01E5A; }
+
+  .card.agent-po::before { background: linear-gradient(90deg, #6366f1, #818cf8); }
+  .card.agent-po h3, .card.agent-po .role { color: #818cf8; }
+
+  .card.agent-dev::before { background: linear-gradient(90deg, #10b981, #34d399); }
+  .card.agent-dev h3, .card.agent-dev .role { color: #34d399; }
+
+  .card.agent-rev::before { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+  .card.agent-rev h3, .card.agent-rev .role { color: #fbbf24; }
+
+  .card.agent-sm::before { background: linear-gradient(90deg, #ef4444, #f87171); }
+  .card.agent-sm h3, .card.agent-sm .role { color: #f87171; }
+
+  .card.monday::before { background: linear-gradient(90deg, #ff3d57, #ff6f61); }
+  .card.monday h3, .card.monday .role { color: #ff6f61; }
+
+  .card.mcp::before { background: linear-gradient(90deg, #a855f7, #c084fc); }
+  .card.mcp h3, .card.mcp .role { color: #c084fc; }
+
+  .card.llm::before { background: linear-gradient(90deg, #d97706, #f59e0b); }
+  .card.llm h3, .card.llm .role { color: #f59e0b; }
+
+  /* Wide card */
+  .card.wide {
+    max-width: 100%;
+    flex: 0 0 100%;
+    text-align: center;
+  }
+  .card.wide-60 {
+    max-width: 60%;
+    flex: 0 0 60%;
+    text-align: center;
+    margin: 0 auto;
+  }
+
+  /* Connectors */
+  .connectors {
+    display: flex;
+    justify-content: center;
+    padding: 8px 0;
+    margin-left: 40px;
+  }
+  .connector {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    margin: 0 auto;
+  }
+  .connector .line {
+    width: 2px;
+    height: 20px;
+    background: linear-gradient(to bottom, rgba(99, 102, 241, 0.6), rgba(168, 85, 247, 0.6));
+    border-radius: 2px;
+  }
+  .connector .arrow {
+    font-size: 10px;
+    color: #6366f1;
+  }
+  .connector .label {
+    font-size: 10px;
+    font-weight: 600;
+    color: #6366f1;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    padding: 2px 10px;
+    background: rgba(99, 102, 241, 0.1);
+    border-radius: 6px;
+  }
+
+  /* Multi connectors */
+  .multi-connectors {
+    display: flex;
+    justify-content: center;
+    gap: 160px;
+    padding: 8px 0;
+    margin-left: 40px;
+  }
+
+  /* Flow section */
+  .flow-section {
+    margin-top: 60px;
+  }
+  .flow-section h2 {
+    font-size: 28px;
+    font-weight: 700;
+    text-align: center;
+    margin-bottom: 32px;
+    background: linear-gradient(135deg, #6366f1, #a855f7);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .flow-steps {
+    display: flex;
+    gap: 16px;
+    overflow-x: auto;
+    padding-bottom: 16px;
+  }
+  .flow-step {
+    flex: 0 0 220px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    padding: 20px;
+    position: relative;
+  }
+  .flow-step .step-num {
+    width: 28px; height: 28px;
+    background: linear-gradient(135deg, #6366f1, #a855f7);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    color: #fff;
+  }
+  .flow-step h4 {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: #e2e8f0;
+  }
+  .flow-step p {
+    font-size: 12px;
+    color: #94a3b8;
+    line-height: 1.5;
+  }
+  .flow-step .step-arrow {
+    position: absolute;
+    right: -16px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 16px;
+    color: #6366f1;
+  }
+
+  /* Tools grid */
+  .tools-section {
+    margin-top: 60px;
+  }
+  .tools-section h2 {
+    font-size: 28px;
+    font-weight: 700;
+    text-align: center;
+    margin-bottom: 32px;
+    background: linear-gradient(135deg, #a855f7, #ec4899);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .tools-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+  .tool-card {
+    background: rgba(168, 85, 247, 0.05);
+    border: 1px solid rgba(168, 85, 247, 0.15);
+    border-radius: 12px;
+    padding: 16px;
+    text-align: center;
+  }
+  .tool-card h4 {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 13px;
+    color: #c084fc;
+    margin-bottom: 4px;
+  }
+  .tool-card p {
+    font-size: 11px;
+    color: #94a3b8;
+  }
+
+  /* Bottom features */
+  .features {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+    margin-top: 60px;
+  }
+  .feature {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    padding: 24px;
+    text-align: center;
+  }
+  .feature .icon { font-size: 36px; margin-bottom: 12px; }
+  .feature h3 { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+  .feature p { font-size: 13px; color: #94a3b8; line-height: 1.5; }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    margin-top: 60px;
+    color: #475569;
+    font-size: 13px;
+  }
+  .footer a { color: #6366f1; text-decoration: none; }
+
+  /* Protocol badges inside cards */
+  .proto-badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-top: 6px;
+    letter-spacing: 0.5px;
+  }
+  .proto-a2a { background: rgba(99,102,241,0.15); color: #818cf8; }
+  .proto-mcp { background: rgba(168,85,247,0.15); color: #c084fc; }
+  .proto-bolt { background: rgba(224,30,90,0.15); color: #E01E5A; }
+  .proto-graphql { background: rgba(255,61,87,0.15); color: #ff6f61; }
+
+  @media (max-width: 900px) {
+    .layer-content { flex-direction: column; align-items: center; }
+    .tools-grid { grid-template-columns: repeat(2, 1fr); }
+    .features { grid-template-columns: 1fr; }
+    .flow-steps { flex-direction: column; align-items: center; }
+    .flow-step .step-arrow { display: none; }
+    .multi-connectors { gap: 40px; }
+    .card.wide-60 { max-width: 100%; flex: 0 0 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <div class="header">
+    <h1>Monday for Agents</h1>
+    <p class="subtitle">
+      AI agents that collaborate like a real dev team — using Monday.com as their shared project board, communicating via Google A2A, and keeping humans in the loop through Slack.
+    </p>
+  </div>
+
+  <!-- Tech Stack -->
+  <div class="tech-stack">
+    <div class="tech-badge"><span class="dot" style="background:#818cf8"></span> Google A2A v0.3</div>
+    <div class="tech-badge"><span class="dot" style="background:#c084fc"></span> Model Context Protocol</div>
+    <div class="tech-badge"><span class="dot" style="background:#34d399"></span> LangGraph</div>
+    <div class="tech-badge"><span class="dot" style="background:#f59e0b"></span> Claude (Anthropic)</div>
+    <div class="tech-badge"><span class="dot" style="background:#ff6f61"></span> Monday.com API</div>
+    <div class="tech-badge"><span class="dot" style="background:#E01E5A"></span> Slack Bolt</div>
+    <div class="tech-badge"><span class="dot" style="background:#60a5fa"></span> Python + TypeScript</div>
+    <div class="tech-badge"><span class="dot" style="background:#f87171"></span> Docker</div>
+  </div>
+
+  <!-- Architecture Diagram -->
+  <div class="diagram">
+
+    <!-- Layer 1: Human -->
+    <div class="layer">
+      <span class="layer-label">Human</span>
+      <div class="layer-content">
+        <div class="card human wide-60">
+          <span class="card-icon">&#128100;</span>
+          <div class="role">Interface Layer</div>
+          <h3>Human User</h3>
+          <p>Describes feature requests, asks for status updates, reviews work, and intervenes when needed. Can also directly edit tasks on the Monday.com board.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Connector -->
+    <div class="connectors">
+      <div class="connector">
+        <div class="line"></div>
+        <div class="label">@mention / threads</div>
+        <div class="line"></div>
+      </div>
+    </div>
+
+    <!-- Layer 2: Slack -->
+    <div class="layer">
+      <span class="layer-label">Gateway</span>
+      <div class="layer-content">
+        <div class="card slack wide-60">
+          <span class="card-icon">&#128172;</span>
+          <div class="role">Slack Gateway</div>
+          <h3>Slack App (TypeScript / Bolt)</h3>
+          <p>Thin gateway that routes @mentions to agents, maintains thread context, and delivers agent responses back. Supports <code>/agents</code> and <code>/status</code> slash commands.</p>
+          <span class="proto-badge proto-bolt">SLACK BOLT</span>
+          <span class="port">:3000</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Connector -->
+    <div class="connectors">
+      <div class="connector">
+        <div class="line"></div>
+        <div class="label">A2A JSON-RPC</div>
+        <div class="line"></div>
+      </div>
+    </div>
+
+    <!-- Layer 3: Agents -->
+    <div class="layer">
+      <span class="layer-label">Agents</span>
+      <div class="layer-content">
+        <div class="card agent-po">
+          <span class="card-icon">&#128203;</span>
+          <div class="role">Product Owner</div>
+          <h3>PO Agent</h3>
+          <p>Receives feature requests from humans. Breaks them into actionable tasks, sets priorities, and delegates to the team.</p>
+          <span class="proto-badge proto-a2a">A2A</span>
+          <span class="port">:10001</span>
+        </div>
+        <div class="card agent-dev">
+          <span class="card-icon">&#128187;</span>
+          <div class="role">Developer</div>
+          <h3>Dev Agent</h3>
+          <p>Picks up assigned tasks, creates implementation plans, updates progress, and moves work to review when complete.</p>
+          <span class="proto-badge proto-a2a">A2A</span>
+          <span class="port">:10002</span>
+        </div>
+        <div class="card agent-rev">
+          <span class="card-icon">&#128269;</span>
+          <div class="role">Reviewer</div>
+          <h3>Review Agent</h3>
+          <p>Reviews developer work against acceptance criteria. Approves and moves to Done, or sends back with actionable feedback.</p>
+          <span class="proto-badge proto-a2a">A2A</span>
+          <span class="port">:10003</span>
+        </div>
+        <div class="card agent-sm">
+          <span class="card-icon">&#128200;</span>
+          <div class="role">Scrum Master</div>
+          <h3>SM Agent</h3>
+          <p>Monitors the board every 30 min. Detects stuck tasks, nudges agents, and reports sprint status summaries to Slack.</p>
+          <span class="proto-badge proto-a2a">A2A</span>
+          <span class="port">:10004</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Connector -->
+    <div class="connectors">
+      <div class="connector">
+        <div class="line"></div>
+        <div class="label">MCP Tools</div>
+        <div class="line"></div>
+      </div>
+    </div>
+
+    <!-- Layer 4: MCP + LLM -->
+    <div class="layer">
+      <span class="layer-label">Tools</span>
+      <div class="layer-content">
+        <div class="card mcp" style="flex: 2;">
+          <span class="card-icon">&#128295;</span>
+          <div class="role">Tool Layer</div>
+          <h3>Monday.com MCP Server</h3>
+          <p>FastMCP server exposing 8 tools for task CRUD, comments, subtasks, and board summaries. All agents share this toolset to read/write the Monday.com board.</p>
+          <span class="proto-badge proto-mcp">MCP</span>
+          <span class="proto-badge proto-graphql">GRAPHQL</span>
+        </div>
+        <div class="card llm">
+          <span class="card-icon">&#129504;</span>
+          <div class="role">Intelligence</div>
+          <h3>Claude (Anthropic)</h3>
+          <p>LangGraph orchestrates each agent as a ReAct loop powered by Claude. Agents reason, use tools, and communicate autonomously.</p>
+          <span class="proto-badge" style="background:rgba(245,158,11,0.15);color:#f59e0b;">LANGGRAPH</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Connector -->
+    <div class="connectors">
+      <div class="connector">
+        <div class="line"></div>
+        <div class="label">GraphQL API</div>
+        <div class="line"></div>
+      </div>
+    </div>
+
+    <!-- Layer 5: Monday.com -->
+    <div class="layer">
+      <span class="layer-label">State</span>
+      <div class="layer-content">
+        <div class="card monday wide">
+          <span class="card-icon">&#128202;</span>
+          <div class="role">Single Source of Truth</div>
+          <h3>Monday.com Board</h3>
+          <p style="max-width: 800px; margin: 0 auto;">
+            The shared project board where all task state lives. Columns: <strong>Status</strong> (To Do / In Progress / In Review / Done / Blocked), <strong>Priority</strong> (Low / Medium / High / Critical), <strong>Assignee</strong>, <strong>Type</strong> (Feature / Bug / Chore / Spike), and <strong>Context ID</strong> for A2A tracing. Humans can directly view, edit, and override anything on the board at any time.
+          </p>
+          <span class="proto-badge proto-graphql">MONDAY.COM</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Workflow -->
+  <div class="flow-section">
+    <h2>How It Works</h2>
+    <div class="flow-steps">
+      <div class="flow-step">
+        <div class="step-num">1</div>
+        <h4>Human Request</h4>
+        <p>A team member @mentions the bot in Slack: <em>"Build a user authentication system"</em></p>
+        <span class="step-arrow">&#8594;</span>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">2</div>
+        <h4>PO Breaks Down</h4>
+        <p>Product Owner agent creates tasks on Monday.com: JWT setup, login endpoint, tests, etc.</p>
+        <span class="step-arrow">&#8594;</span>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">3</div>
+        <h4>Dev Picks Up</h4>
+        <p>Developer agent is notified via A2A, reads the task, marks it In Progress, and works on it.</p>
+        <span class="step-arrow">&#8594;</span>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">4</div>
+        <h4>Review Cycle</h4>
+        <p>Developer moves task to In Review. Reviewer agent checks work, approves or sends back feedback.</p>
+        <span class="step-arrow">&#8594;</span>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">5</div>
+        <h4>Done + Report</h4>
+        <p>Task moves to Done. Scrum Master monitors progress, reports status, and nudges stuck items.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- MCP Tools -->
+  <div class="tools-section">
+    <h2>Monday.com MCP Tools</h2>
+    <div class="tools-grid">
+      <div class="tool-card"><h4>create_task</h4><p>Create items with status, priority, assignee</p></div>
+      <div class="tool-card"><h4>update_task_status</h4><p>Change status + add optional comment</p></div>
+      <div class="tool-card"><h4>get_my_tasks</h4><p>Filter tasks by agent assignee</p></div>
+      <div class="tool-card"><h4>get_board_summary</h4><p>All tasks grouped by status</p></div>
+      <div class="tool-card"><h4>get_task_details</h4><p>Full item with subitems & comments</p></div>
+      <div class="tool-card"><h4>add_task_comment</h4><p>Post updates/comments on items</p></div>
+      <div class="tool-card"><h4>create_subtask</h4><p>Add subtasks under parent items</p></div>
+      <div class="tool-card"><h4>move_task_to_group</h4><p>Move items between board groups</p></div>
+    </div>
+  </div>
+
+  <!-- Features -->
+  <div class="features">
+    <div class="feature">
+      <div class="icon">&#128101;</div>
+      <h3>Human-in-the-Loop</h3>
+      <p>Humans stay in control via Slack threads and can directly edit tasks on Monday.com. Agents respect manual overrides.</p>
+    </div>
+    <div class="feature">
+      <div class="icon">&#128260;</div>
+      <h3>Full Observability</h3>
+      <p>Every agent action is visible on the Monday.com board. Comments, status changes, and assignments are all tracked.</p>
+    </div>
+    <div class="feature">
+      <div class="icon">&#9881;</div>
+      <h3>YAML-Configured</h3>
+      <p>Each agent is defined by a simple YAML file. Change prompts, models, skills, and ports without touching code.</p>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <p>Monday for Agents &mdash; Built with <a href="#">Google A2A</a>, <a href="#">MCP</a>, <a href="#">LangGraph</a>, and <a href="#">Claude</a></p>
+  </div>
+
+</div>
+</body>
+</html>
