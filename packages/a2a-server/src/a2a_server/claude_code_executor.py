@@ -195,9 +195,12 @@ class ClaudeCodeExecutor(AgentExecutor):
             "--model", model,
         ]
 
-        # System prompt
+        # System prompt — interpolate {board_id} with actual Monday board ID
         system_prompt = agent_def.prompt.system
         if system_prompt:
+            board_id = getattr(agent_def.monday, "board_id", None) if agent_def.monday else None
+            if board_id:
+                system_prompt = system_prompt.replace("{board_id}", str(board_id))
             cmd.extend(["--system-prompt", system_prompt])
 
         # MCP config

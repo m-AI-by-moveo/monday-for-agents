@@ -52,6 +52,41 @@ function pickAgent(text: string): string {
 /** Cached bot user ID – resolved once on first mention. */
 let botUserId: string | null = null;
 
+/** Cached mapping of Slack user ID → display name (populated lazily). */
+const userNameCache = new Map<string, string>();
+
+/**
+ * Populate the user name cache from the full Slack user list.
+ * This uses the `users.list` endpoint which only requires the `users:read`
+ * scope — but if that scope is missing too, we fall back gracefully.
+ */
+async function ensureUserCache(client: WebClient): Promise<void> {
+  if (userNameCache.size > 0) return;
+  try {
+    let cursor: string | undefined;
+    do {
+      const res = await client.users.list({ cursor, limit: 200 });
+      for (const member of res.members ?? []) {
+        if (member.id && !member.deleted) {
+          const name =
+            member.real_name ||
+            member.profile?.display_name ||
+            member.name ||
+            member.id;
+          userNameCache.set(member.id, name);
+        }
+      }
+      cursor = res.response_metadata?.next_cursor || undefined;
+    } while (cursor);
+    console.log(`[mention] Cached ${userNameCache.size} Slack users`);
+  } catch (err: any) {
+    console.warn(
+      `[mention] Could not load user list (${err?.data?.error || err?.message}). ` +
+      "Add the 'users:read' scope to the Slack app to enable @mention resolution.",
+    );
+  }
+}
+
 /**
  * Replace the bot's own @mention with nothing, and resolve any other
  * <@USERID> mentions to the user's real name so the agent sees
@@ -65,6 +100,9 @@ async function resolveMentions(
     const auth = await client.auth.test();
     botUserId = auth.user_id as string;
   }
+
+  // Pre-load the full user list (cached after first call)
+  await ensureUserCache(client);
 
   const mentionRegex = /<@([A-Z0-9]+)>/g;
   let result = text;
@@ -81,15 +119,12 @@ async function resolveMentions(
       result = result.replace(full, "");
       continue;
     }
-    try {
-      const info = await client.users.info({ user: userId });
-      const name =
-        info.user?.real_name || info.user?.profile?.display_name || info.user?.name || userId;
-      console.log(`[mention] Resolved <@${userId}> to "${name}"`);
-      result = result.replace(full, name);
-    } catch (err: any) {
-      console.error(`[mention] Failed to resolve <@${userId}>:`, err?.data?.error || err?.message || err);
-      // Keep the raw ID so the message still flows through
+    const cached = userNameCache.get(userId);
+    if (cached) {
+      console.log(`[mention] Resolved <@${userId}> to "${cached}"`);
+      result = result.replace(full, cached);
+    } else {
+      console.warn(`[mention] Unknown user <@${userId}>, keeping raw ID`);
       result = result.replace(full, `@${userId}`);
     }
   }
