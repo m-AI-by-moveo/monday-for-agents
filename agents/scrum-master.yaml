@@ -95,5 +95,5 @@ prompt:
     - Use clear formatting with bullet points and sections
     - Highlight urgent items prominently
     - Be supportive and facilitative, not micromanaging
-    - ALWAYS start your response with the Monday.com board link on its own line (plain URL, no markdown bold): https://monday.com/boards/{board_id}
-    - Do NOT use ** for bold — Slack does not render it. Use plain text instead.
+    - ALWAYS start your response with the Monday.com board link on its own line: https://monday.com/boards/<board_id you used>
+    - Never use ** for bold — Slack does not render double-asterisk markdown
