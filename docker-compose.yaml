@@ -1,0 +1,100 @@
+services:
+  # Monday.com MCP Server (stdio, launched by agents — no standalone container needed)
+
+  product-owner:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    command: ["mfa", "run", "product-owner"]
+    ports:
+      - "${PO_AGENT_PORT:-10001}:${PO_AGENT_PORT:-10001}"
+    environment:
+      - MONDAY_API_TOKEN
+      - MONDAY_BOARD_ID
+      - ANTHROPIC_API_KEY
+      - PO_AGENT_PORT=${PO_AGENT_PORT:-10001}
+      - DEV_AGENT_PORT=${DEV_AGENT_PORT:-10002}
+      - REVIEWER_AGENT_PORT=${REVIEWER_AGENT_PORT:-10003}
+      - SM_AGENT_PORT=${SM_AGENT_PORT:-10004}
+    volumes:
+      - ./agents:/app/agents:ro
+    depends_on: []
+    restart: unless-stopped
+
+  developer:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    command: ["mfa", "run", "developer"]
+    ports:
+      - "${DEV_AGENT_PORT:-10002}:${DEV_AGENT_PORT:-10002}"
+    environment:
+      - MONDAY_API_TOKEN
+      - MONDAY_BOARD_ID
+      - ANTHROPIC_API_KEY
+      - PO_AGENT_PORT=${PO_AGENT_PORT:-10001}
+      - DEV_AGENT_PORT=${DEV_AGENT_PORT:-10002}
+      - REVIEWER_AGENT_PORT=${REVIEWER_AGENT_PORT:-10003}
+      - SM_AGENT_PORT=${SM_AGENT_PORT:-10004}
+    volumes:
+      - ./agents:/app/agents:ro
+    restart: unless-stopped
+
+  reviewer:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    command: ["mfa", "run", "reviewer"]
+    ports:
+      - "${REVIEWER_AGENT_PORT:-10003}:${REVIEWER_AGENT_PORT:-10003}"
+    environment:
+      - MONDAY_API_TOKEN
+      - MONDAY_BOARD_ID
+      - ANTHROPIC_API_KEY
+      - PO_AGENT_PORT=${PO_AGENT_PORT:-10001}
+      - DEV_AGENT_PORT=${DEV_AGENT_PORT:-10002}
+      - REVIEWER_AGENT_PORT=${REVIEWER_AGENT_PORT:-10003}
+      - SM_AGENT_PORT=${SM_AGENT_PORT:-10004}
+    volumes:
+      - ./agents:/app/agents:ro
+    restart: unless-stopped
+
+  scrum-master:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    command: ["mfa", "run", "scrum-master"]
+    ports:
+      - "${SM_AGENT_PORT:-10004}:${SM_AGENT_PORT:-10004}"
+    environment:
+      - MONDAY_API_TOKEN
+      - MONDAY_BOARD_ID
+      - ANTHROPIC_API_KEY
+      - SLACK_CHANNEL_ID
+      - PO_AGENT_PORT=${PO_AGENT_PORT:-10001}
+      - DEV_AGENT_PORT=${DEV_AGENT_PORT:-10002}
+      - REVIEWER_AGENT_PORT=${REVIEWER_AGENT_PORT:-10003}
+      - SM_AGENT_PORT=${SM_AGENT_PORT:-10004}
+    volumes:
+      - ./agents:/app/agents:ro
+    restart: unless-stopped
+
+  slack-app:
+    build:
+      context: ./packages/slack-app
+      dockerfile: Dockerfile
+    environment:
+      - SLACK_BOT_TOKEN
+      - SLACK_SIGNING_SECRET
+      - SLACK_APP_TOKEN
+      - SLACK_CHANNEL_ID
+      - PO_AGENT_PORT=${PO_AGENT_PORT:-10001}
+      - DEV_AGENT_PORT=${DEV_AGENT_PORT:-10002}
+      - REVIEWER_AGENT_PORT=${REVIEWER_AGENT_PORT:-10003}
+      - SM_AGENT_PORT=${SM_AGENT_PORT:-10004}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - product-owner
+      - scrum-master
+    restart: unless-stopped

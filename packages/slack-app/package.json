@@ -1,0 +1,29 @@
+{
+  "name": "mfa-slack-app",
+  "version": "0.1.0",
+  "description": "Slack gateway for Monday-for-Agents — routes messages to A2A agents",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@slack/bolt": "^4.1.0",
+    "axios": "^1.7.0",
+    "dotenv": "^16.4.0",
+    "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/uuid": "^10.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "@vitest/coverage-v8": "^2.1.0",
+    "nock": "^14.0.0"
+  }
+}

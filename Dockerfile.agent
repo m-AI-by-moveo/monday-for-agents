@@ -1,0 +1,25 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install uv for fast dependency management
+RUN pip install uv
+
+# Copy workspace config
+COPY pyproject.toml ./
+COPY packages/a2a-server/pyproject.toml packages/a2a-server/
+COPY packages/monday-mcp/pyproject.toml packages/monday-mcp/
+
+# Copy source code
+COPY packages/a2a-server/src packages/a2a-server/src/
+COPY packages/monday-mcp/src packages/monday-mcp/src/
+
+# Install dependencies
+RUN cd packages/monday-mcp && uv pip install --system -e . && \
+    cd /app/packages/a2a-server && uv pip install --system -e .
+
+# Agent YAML configs are mounted as a volume
+VOLUME ["/app/agents"]
+
+ENTRYPOINT ["mfa"]
+CMD ["run-all"]
