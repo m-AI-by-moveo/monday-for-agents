@@ -83,6 +83,20 @@ class PromptConfig(BaseModel):
     system: str = Field("", description="System prompt injected into every conversation")
 
 
+class ClaudeCodeConfig(BaseModel):
+    """Configuration for the Claude Code CLI executor."""
+
+    allowed_tools: list[str] = Field(
+        default_factory=list,
+        description="--allowedTools restrictions (empty = allow all)",
+    )
+    timeout: int = Field(600, description="Subprocess timeout in seconds")
+    add_dirs: list[str] = Field(
+        default_factory=list,
+        description="--add-dir paths for additional file access",
+    )
+
+
 class AgentDefinition(BaseModel):
     """Root model representing a complete agent YAML file."""
 
@@ -94,3 +108,7 @@ class AgentDefinition(BaseModel):
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     monday: MondayConfig = Field(default_factory=MondayConfig)
     prompt: PromptConfig = Field(default_factory=PromptConfig)
+    claude_code: ClaudeCodeConfig = Field(
+        default_factory=ClaudeCodeConfig,
+        description="Claude Code CLI executor configuration",
+    )

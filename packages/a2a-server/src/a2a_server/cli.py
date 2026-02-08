@@ -19,15 +19,13 @@ import uvicorn
 from starlette.applications import Starlette
 from starlette.routing import Mount, Route
 
-from a2a_server.agent_executor import LangGraphA2AExecutor
 from a2a_server.agent_loader import load_agent, load_all_agents
-from a2a_server.graph import build_graph
+from a2a_server.claude_code_executor import ClaudeCodeExecutor
 from a2a_server.health import health_routes, init_health
 from a2a_server.logging_config import configure_logging
+from a2a_server.mcp_config import build_mcp_config
 from a2a_server.models import AgentDefinition
-from a2a_server.claude_code_tool import make_claude_code_tool
-from a2a_server.registry import AgentRegistry, make_a2a_send_tool
-from a2a_server.review_pr_tool import make_review_pr_tool
+from a2a_server.registry import AgentRegistry
 from a2a_server.server import create_a2a_app
 from a2a_server.middleware import (
     APIKeyAuthMiddleware,
@@ -119,16 +117,12 @@ async def _run_single(yaml_path: Path) -> None:
     # Build a minimal registry (the single agent can still be looked up)
     registry = AgentRegistry()
     registry.register(agent_def)
-    send_tool = make_a2a_send_tool(registry)
+    agent_urls = {
+        e.definition.metadata.name: e.url for e in registry.list_agents()
+    }
 
-    extra_tools = [send_tool]
-    if agent_def.metadata.name == "developer":
-        extra_tools.append(make_claude_code_tool())
-    if agent_def.metadata.name == "reviewer":
-        extra_tools.append(make_review_pr_tool())
-
-    graph = await build_graph(agent_def, extra_tools=extra_tools)
-    executor = LangGraphA2AExecutor(graph=graph, agent_def=agent_def)
+    mcp_config = build_mcp_config(agent_def, agent_urls=agent_urls)
+    executor = ClaudeCodeExecutor(agent_def=agent_def, mcp_config=mcp_config)
     a2a_app = create_a2a_app(agent_def, executor)
 
     starlette_app = _build_starlette_app(a2a_app)
@@ -177,19 +171,15 @@ async def _run_all(agents_dir: Path) -> None:
 
     # Shared registry so agents can message each other
     registry = AgentRegistry.from_definitions(definitions)
-    send_tool = make_a2a_send_tool(registry)
+    agent_urls = {
+        e.definition.metadata.name: e.url for e in registry.list_agents()
+    }
 
     servers: list[uvicorn.Server] = []
 
     for agent_def in definitions:
-        extra_tools = [send_tool]
-        if agent_def.metadata.name == "developer":
-            extra_tools.append(make_claude_code_tool())
-        if agent_def.metadata.name == "reviewer":
-            extra_tools.append(make_review_pr_tool())
-
-        graph = await build_graph(agent_def, extra_tools=extra_tools)
-        executor = LangGraphA2AExecutor(graph=graph, agent_def=agent_def)
+        mcp_config = build_mcp_config(agent_def, agent_urls=agent_urls)
+        executor = ClaudeCodeExecutor(agent_def=agent_def, mcp_config=mcp_config)
         a2a_app = create_a2a_app(agent_def, executor)
 
         starlette_app = _build_starlette_app(a2a_app)

@@ -32,6 +32,10 @@ tools:
     - name: monday
       source: builtin:monday-mcp
 
+claude_code:
+  timeout: 300
+  allowed_tools: ["mcp__monday__*", "mcp__a2a-bridge__*"]
+
 monday:
   board_id: "${MONDAY_BOARD_ID}"
   default_group: "To Do"
@@ -91,6 +95,8 @@ prompt:
        (e.g., some boards use "To Do" while others use "Pending" or "Working on it").
     3. Use the actual group ID and exact status labels from the board when calling `create_task`.
        Do NOT assume status labels — always check the board first.
+    4. For newly created tasks, use the board's "pending"/"to do" equivalent (NOT "Working on it").
+       "Working on it" means actively being worked on — new tasks should be in a pending/backlog state.
 
     ### Task Naming Convention
     Prefix each task name with its sequence number:
@@ -115,8 +121,8 @@ prompt:
       - Task 1-2: Critical
       - Task 3-4: High
       - Task 5+: Medium
-    - All implementation tasks → assign to "developer"
-    - All tasks start with status "To Do"
+    - All implementation tasks → set `assignee="developer"` in the create_task call (this is REQUIRED)
+    - All tasks start with the board's "pending"/"to do" status (discovered via get_board_summary — NOT "Working on it")
     - If a request is unclear, ask clarifying questions before creating the PRD
 
     ## Phase 3: Notify Developer
@@ -129,9 +135,11 @@ prompt:
        - A summary of the PRD
        - The list of created tasks with IDs and sequence numbers
        - The suggested execution order
+       - **A link to the Monday.com board:** `https://monday.com/boards/{board_id}` (ALWAYS include this)
 
     ## Communication Style
     - Be concise and structured in your responses
     - Use bullet points for task breakdowns
     - Always reference Monday.com item IDs
     - Include the total task count and estimated complexity breakdown
+    - ALWAYS include the Monday.com board link at the end of your response: `https://monday.com/boards/{board_id}`

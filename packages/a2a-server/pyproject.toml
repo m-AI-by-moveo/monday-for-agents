@@ -1,13 +1,11 @@
 [project]
 name = "mfa-a2a-server"
 version = "0.1.0"
-description = "A2A server + LangGraph agent runner for Monday-for-Agents"
+description = "A2A server + Claude Code agent runner for Monday-for-Agents"
 requires-python = ">=3.11"
 dependencies = [
     "a2a-sdk[http]>=0.3.0",
-    "langgraph>=0.4.0",
-    "langchain-mcp-adapters>=0.1.0",
-    "langchain-anthropic>=0.3.0",
+    "mcp[cli]>=1.0.0",
     "pydantic>=2.0",
     "pyyaml>=6.0",
     "uvicorn>=0.30.0",
