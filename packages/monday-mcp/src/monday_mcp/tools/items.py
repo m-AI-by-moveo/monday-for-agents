@@ -13,6 +13,30 @@ logger = logging.getLogger(__name__)
 # Column-value helpers
 # ---------------------------------------------------------------------------
 
+async def _resolve_person_id(client: Any, name: str) -> int | None:
+    """Resolve a person name to their Monday.com user ID (case-insensitive)."""
+    users = await client.get_users()
+    name_lower = name.lower()
+    for user in users:
+        if user.get("name", "").lower() == name_lower:
+            return int(user["id"])
+    # Try partial match (first name or last name)
+    for user in users:
+        user_name = user.get("name", "").lower()
+        if name_lower in user_name or user_name in name_lower:
+            return int(user["id"])
+    return None
+
+
+async def _find_person_column_id(client: Any, board_id: int) -> str | None:
+    """Find the column ID for the Person/People column on a board."""
+    board = await client.get_board(board_id)
+    for col in board.get("columns", []):
+        if col.get("type") in ("people", "person"):
+            return col["id"]
+    return None
+
+
 def _build_column_values(
     *,
     status: str | None = None,
@@ -20,6 +44,8 @@ def _build_column_values(
     priority: str | None = None,
     task_type: str | None = None,
     context_id: str | None = None,
+    person_column_id: str | None = None,
+    person_user_id: int | None = None,
 ) -> dict[str, Any]:
     """Build the column_values dict understood by the Monday.com API.
 
@@ -35,6 +61,10 @@ def _build_column_values(
         cols["priority"] = {"label": priority}
     if assignee:
         cols["text"] = assignee
+    if person_column_id and person_user_id:
+        cols[person_column_id] = {
+            "personsAndTeams": [{"id": person_user_id, "kind": "person"}]
+        }
     if task_type:
         cols["dropdown"] = {"labels": [task_type]}
     if context_id:
@@ -119,12 +149,26 @@ async def create_task(
     # Resolve group name to ID if needed
     resolved_group_id = await _resolve_group_id(client, board_id, group_id)
 
+    # Resolve assignee name to Monday.com user ID for the Person column
+    person_column_id: str | None = None
+    person_user_id: int | None = None
+    if assignee:
+        person_column_id = await _find_person_column_id(client, board_id)
+        if person_column_id:
+            person_user_id = await _resolve_person_id(client, assignee)
+            if person_user_id:
+                logger.info("Resolved assignee '%s' to user ID %d", assignee, person_user_id)
+            else:
+                logger.warning("Could not resolve assignee '%s' to a Monday.com user", assignee)
+
     column_values = _build_column_values(
         status=status,
         assignee=assignee,
         priority=priority,
         task_type=task_type,
         context_id=context_id,
+        person_column_id=person_column_id,
+        person_user_id=person_user_id,
     )
 
     item = await client.create_item(

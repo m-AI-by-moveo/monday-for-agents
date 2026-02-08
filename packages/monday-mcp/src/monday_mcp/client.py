@@ -392,6 +392,24 @@ class MondayClient:
         return data["move_item_to_group"]
 
     # ------------------------------------------------------------------
+    # User operations
+    # ------------------------------------------------------------------
+
+    async def get_users(self) -> list[dict[str, Any]]:
+        """Fetch all users in the Monday.com account."""
+        query = """
+        query GetUsers {
+            users {
+                id
+                name
+                email
+            }
+        }
+        """
+        data = await self.execute(query)
+        return data.get("users", [])
+
+    # ------------------------------------------------------------------
     # Rate-limit helpers
     # ------------------------------------------------------------------
 
