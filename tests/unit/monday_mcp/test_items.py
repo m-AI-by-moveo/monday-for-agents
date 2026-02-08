@@ -94,24 +94,24 @@ def test_build_column_values_with_status_and_priority() -> None:
 
 
 @pytest.mark.unit
-def test_build_column_values_raises_for_invalid_status() -> None:
-    """_build_column_values() raises ValueError for an unrecognised status."""
-    with pytest.raises(ValueError, match="Invalid status 'Not Real'"):
-        _build_column_values(status="Not Real")
+def test_build_column_values_passes_custom_status() -> None:
+    """_build_column_values() accepts any status string (no client-side validation)."""
+    result = _build_column_values(status="Working on it")
+    assert result["status"] == {"label": "Working on it"}
 
 
 @pytest.mark.unit
-def test_build_column_values_raises_for_invalid_priority() -> None:
-    """_build_column_values() raises ValueError for an unrecognised priority."""
-    with pytest.raises(ValueError, match="Invalid priority 'Urgent'"):
-        _build_column_values(priority="Urgent")
+def test_build_column_values_passes_custom_priority() -> None:
+    """_build_column_values() accepts any priority string (no client-side validation)."""
+    result = _build_column_values(priority="Urgent")
+    assert result["priority"] == {"label": "Urgent"}
 
 
 @pytest.mark.unit
-def test_build_column_values_raises_for_invalid_type() -> None:
-    """_build_column_values() raises ValueError for an unrecognised task type."""
-    with pytest.raises(ValueError, match="Invalid type 'Epic'"):
-        _build_column_values(task_type="Epic")
+def test_build_column_values_passes_custom_type() -> None:
+    """_build_column_values() accepts any task type string."""
+    result = _build_column_values(task_type="Epic")
+    assert result["dropdown"] == {"labels": ["Epic"]}
 
 
 # ---------------------------------------------------------------------------
@@ -276,17 +276,26 @@ async def test_update_task_status_without_comment_does_not_create_update(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_update_task_status_raises_for_invalid_status(
+async def test_update_task_status_passes_custom_labels(
     mock_client: AsyncMock,
+    monday_change_columns_response: dict[str, Any],
 ) -> None:
-    """update_task_status() raises ValueError for an invalid status value."""
-    with pytest.raises(ValueError, match="Invalid status 'Invalid'"):
-        await update_task_status(
-            board_id=123456789,
-            item_id=111,
-            status="Invalid",
-        )
-    mock_client.change_column_values.assert_not_awaited()
+    """update_task_status() accepts any status label (board-specific)."""
+    mock_client.change_column_values.return_value = (
+        monday_change_columns_response["data"]["change_multiple_column_values"]
+    )
+
+    await update_task_status(
+        board_id=123456789,
+        item_id=111,
+        status="Working on it",
+    )
+
+    mock_client.change_column_values.assert_awaited_once_with(
+        item_id=111,
+        board_id=123456789,
+        column_values={"status": {"label": "Working on it"}},
+    )
 
 
 # ---------------------------------------------------------------------------

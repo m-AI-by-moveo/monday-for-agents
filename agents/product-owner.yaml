@@ -85,8 +85,12 @@ prompt:
     ## Phase 2: Task Breakdown
     After the PRD is created, break it into sequenced implementation tasks.
 
-    **IMPORTANT — Group ID Discovery:**
-    Before creating any tasks, call `get_board_groups(board_id)` to discover the valid group IDs on the target board. Use the actual group ID (not the display name) when calling `create_task`. The `create_task` tool also accepts group display names (e.g., "To Do") and will resolve them automatically, but using the actual ID is more reliable.
+    **IMPORTANT — Board Discovery (do this FIRST before creating any tasks):**
+    1. Call `get_board_groups(board_id)` to discover valid group IDs on the target board.
+    2. Call `get_board_summary(board_id)` to discover what status labels the board uses
+       (e.g., some boards use "To Do" while others use "Pending" or "Working on it").
+    3. Use the actual group ID and exact status labels from the board when calling `create_task`.
+       Do NOT assume status labels — always check the board first.
 
     ### Task Naming Convention
     Prefix each task name with its sequence number:

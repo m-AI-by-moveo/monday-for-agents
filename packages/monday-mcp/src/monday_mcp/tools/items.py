@@ -13,11 +13,6 @@ logger = logging.getLogger(__name__)
 # Column-value helpers
 # ---------------------------------------------------------------------------
 
-_STATUS_VALUES = {"To Do", "In Progress", "In Review", "Done", "Blocked"}
-_PRIORITY_VALUES = {"Low", "Medium", "High", "Critical"}
-_TYPE_VALUES = {"Feature", "Bug", "Chore", "Spike"}
-
-
 def _build_column_values(
     *,
     status: str | None = None,
@@ -26,27 +21,21 @@ def _build_column_values(
     task_type: str | None = None,
     context_id: str | None = None,
 ) -> dict[str, Any]:
-    """Build the column_values dict understood by the Monday.com API."""
+    """Build the column_values dict understood by the Monday.com API.
+
+    Status and priority labels are passed directly to Monday.com without
+    client-side validation, since different boards have different label
+    configurations.  Monday.com's API will return a descriptive error if
+    a label doesn't exist on the target board.
+    """
     cols: dict[str, Any] = {}
     if status:
-        if status not in _STATUS_VALUES:
-            raise ValueError(
-                f"Invalid status '{status}'. Must be one of: {', '.join(sorted(_STATUS_VALUES))}"
-            )
         cols["status"] = {"label": status}
     if priority:
-        if priority not in _PRIORITY_VALUES:
-            raise ValueError(
-                f"Invalid priority '{priority}'. Must be one of: {', '.join(sorted(_PRIORITY_VALUES))}"
-            )
         cols["priority"] = {"label": priority}
     if assignee:
         cols["text"] = assignee
     if task_type:
-        if task_type not in _TYPE_VALUES:
-            raise ValueError(
-                f"Invalid type '{task_type}'. Must be one of: {', '.join(sorted(_TYPE_VALUES))}"
-            )
         cols["dropdown"] = {"labels": [task_type]}
     if context_id:
         cols["text0"] = context_id
@@ -164,17 +153,12 @@ async def update_task_status(
     Args:
         board_id: The ID of the board containing the item.
         item_id: The ID of the item to update.
-        status: New status value. One of: To Do, In Progress, In Review, Done, Blocked.
+        status: New status value. Must match a label on the board's status column.
         comment: Optional comment to add alongside the status change.
 
     Returns:
         The updated item data from Monday.com.
     """
-    if status not in _STATUS_VALUES:
-        raise ValueError(
-            f"Invalid status '{status}'. Must be one of: {', '.join(sorted(_STATUS_VALUES))}"
-        )
-
     client = get_client()
     item = await client.change_column_values(
         item_id=item_id,

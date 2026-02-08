@@ -47,14 +47,19 @@ async def create_task(
 ) -> str:
     """Create a new task on a Monday.com board.
 
+    IMPORTANT: Before calling this, use get_board_groups to discover valid group IDs,
+    and get_board_summary to see what status labels exist on the board.
+
     Args:
         board_id: The ID of the Monday.com board.
-        group_id: The ID of the group to create the item in.
+        group_id: The ID or display name of the group (use get_board_groups to find valid values).
         name: The name / title of the task.
-        status: Task status. One of: To Do, In Progress, In Review, Done, Blocked.
+        status: Task status label. Must match the board's status column labels exactly.
+            Common examples: "To Do", "Working on it", "Done", "Stuck", "Pending".
+            Use get_board_summary to discover valid labels for the target board.
         assignee: Name of the person or agent assigned to this task.
-        priority: Priority level. One of: Low, Medium, High, Critical.
-        task_type: Task type. One of: Feature, Bug, Chore, Spike.
+        priority: Priority label. Must match the board's priority column labels.
+        task_type: Task type for dropdown column (e.g. Feature, Bug, Chore, Spike).
         description: Optional description added as the first comment.
         context_id: Optional A2A context ID for tracing.
     """
@@ -84,7 +89,7 @@ async def update_task_status(
     Args:
         board_id: The ID of the board containing the item.
         item_id: The ID of the item to update.
-        status: New status value. One of: To Do, In Progress, In Review, Done, Blocked.
+        status: New status label. Must match the board's status column labels exactly.
         comment: Optional comment to add alongside the status change.
     """
     result = await _update_task_status(
