@@ -1,4 +1,5 @@
 import type { App, AllMiddlewareArgs, SlackEventMiddlewareArgs } from "@slack/bolt";
+import type { WebClient } from "@slack/web-api";
 import { v4 as uuidv4 } from "uuid";
 import {
   createA2AClient,
@@ -10,6 +11,7 @@ import {
   agentResponseBlocks,
   errorBlocks,
   warningBlocks,
+  loadingBlocks,
   noResponseBlocks,
 } from "../ui/block-builder.js";
 
@@ -47,9 +49,49 @@ function pickAgent(text: string): string {
   return "product-owner";
 }
 
-function stripMention(text: string): string {
-  // Slack mentions look like <@U12345> – strip them out
-  return text.replace(/<@[A-Z0-9]+>/g, "").trim();
+/** Cached bot user ID – resolved once on first mention. */
+let botUserId: string | null = null;
+
+/**
+ * Replace the bot's own @mention with nothing, and resolve any other
+ * <@USERID> mentions to the user's real name so the agent sees
+ * "create a task for Or Bruchim" instead of "create a task for".
+ */
+async function resolveMentions(
+  client: WebClient,
+  text: string,
+): Promise<string> {
+  if (!botUserId) {
+    const auth = await client.auth.test();
+    botUserId = auth.user_id as string;
+  }
+
+  const mentionRegex = /<@([A-Z0-9]+)>/g;
+  let result = text;
+  let match: RegExpExecArray | null;
+
+  // Collect all matches first (regex is stateful)
+  const matches: Array<{ full: string; userId: string }> = [];
+  while ((match = mentionRegex.exec(text)) !== null) {
+    matches.push({ full: match[0], userId: match[1] });
+  }
+
+  for (const { full, userId } of matches) {
+    if (userId === botUserId) {
+      result = result.replace(full, "");
+      continue;
+    }
+    try {
+      const info = await client.users.info({ user: userId });
+      const name =
+        info.user?.real_name || info.user?.profile?.display_name || info.user?.name || userId;
+      result = result.replace(full, name);
+    } catch {
+      result = result.replace(full, `@${userId}`);
+    }
+  }
+
+  return result.trim();
 }
 
 // ---------------------------------------------------------------------------
@@ -64,9 +106,10 @@ export function registerMentionHandler(app: App): void {
     async ({
       event,
       say,
+      client,
     }: AllMiddlewareArgs & SlackEventMiddlewareArgs<"app_mention">) => {
       const rawText = event.text ?? "";
-      const messageText = stripMention(rawText);
+      const messageText = await resolveMentions(client, rawText);
 
       if (!messageText) {
         await say({ text: "Hey! How can I help?", thread_ts: event.ts });
@@ -95,6 +138,12 @@ export function registerMentionHandler(app: App): void {
       console.log(
         `[mention] Routing to ${agentKey} | thread=${threadTs} context=${mapping.contextId}`,
       );
+
+      // Post an immediate acknowledgment so the user knows we're working
+      const { blocks: loadBlocks, text: loadText } = loadingBlocks(
+        `Routing to *${agentKey}*... This may take a few minutes.`,
+      );
+      await say({ blocks: loadBlocks, text: loadText, thread_ts: threadTs });
 
       let response: A2AResponse;
       try {
