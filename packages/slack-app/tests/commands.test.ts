@@ -4,8 +4,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // Mock the a2a-client module BEFORE importing the handler
 // ---------------------------------------------------------------------------
 
-const mockSendMessage = vi.fn();
-const mockGetTask = vi.fn();
+const { mockSendMessage, mockGetTask } = vi.hoisted(() => ({
+  mockSendMessage: vi.fn(),
+  mockGetTask: vi.fn(),
+}));
 
 vi.mock("../src/services/a2a-client.js", () => ({
   createA2AClient: () => ({
@@ -26,6 +28,31 @@ vi.mock("../src/services/a2a-client.js", () => ({
     "reviewer": "http://localhost:10003",
     "scrum-master": "http://localhost:10004",
   },
+}));
+
+// Mock block-builder
+vi.mock("../src/ui/block-builder.js", () => ({
+  agentListBlocks: (agents: Record<string, string>) => {
+    const lines = Object.entries(agents).map(([name, url]) => `*${name}* → \`${url}\``);
+    const text = `Registered Agents: ${Object.keys(agents).join(", ")}`;
+    return { blocks: [{ type: "header" }, { type: "section", text: { text: lines.join("\n") } }], text };
+  },
+  statusDashboardBlocks: (statusText: string) => ({
+    blocks: [{ type: "header" }, { type: "section", text: { text: statusText } }],
+    text: statusText,
+  }),
+  loadingBlocks: (msg: string) => ({
+    blocks: [{ type: "section", text: { text: `:hourglass_flowing_sand: ${msg}` } }],
+    text: `:hourglass_flowing_sand: ${msg}`,
+  }),
+  errorBlocks: (msg: string) => ({
+    blocks: [{ type: "section", text: { text: `:x: ${msg}` } }],
+    text: `:x: ${msg}`,
+  }),
+  warningBlocks: (msg: string) => ({
+    blocks: [{ type: "section", text: { text: `:warning: ${msg}` } }],
+    text: `:warning: ${msg}`,
+  }),
 }));
 
 import { registerCommands } from "../src/handlers/commands.js";
@@ -94,26 +121,23 @@ describe("commands handler", () => {
       expect(ack).toHaveBeenCalledTimes(1);
     });
 
-    it("returns a list of all agent names and URLs", async () => {
+    it("returns a list of all agent names and URLs with blocks", async () => {
       const ack = makeAck();
       const respond = makeRespond();
 
       await mock.fireCommand("/agents", { ack, respond });
 
       expect(respond).toHaveBeenCalledTimes(1);
-      const call = respond.mock.calls[0][0] as { response_type: string; text: string };
+      const call = respond.mock.calls[0][0] as { response_type: string; text: string; blocks: any[] };
       expect(call.response_type).toBe("ephemeral");
+      expect(call.blocks).toBeDefined();
+      expect(Array.isArray(call.blocks)).toBe(true);
 
       // Verify all four agents appear in the response text
       expect(call.text).toContain("product-owner");
       expect(call.text).toContain("developer");
       expect(call.text).toContain("reviewer");
       expect(call.text).toContain("scrum-master");
-
-      expect(call.text).toContain("http://localhost:10001");
-      expect(call.text).toContain("http://localhost:10002");
-      expect(call.text).toContain("http://localhost:10003");
-      expect(call.text).toContain("http://localhost:10004");
     });
   });
 
@@ -142,13 +166,12 @@ describe("commands handler", () => {
       await mock.fireCommand("/status", { ack, respond });
 
       expect(ack).toHaveBeenCalledTimes(1);
-      // ack should be called before respond
       expect(ack.mock.invocationCallOrder[0]).toBeLessThan(
         respond.mock.invocationCallOrder[0],
       );
     });
 
-    it("sends query to scrum-master agent", async () => {
+    it("sends query to scrum-master agent and returns blocks", async () => {
       const ack = makeAck();
       const respond = makeRespond();
 
@@ -170,27 +193,28 @@ describe("commands handler", () => {
 
       await mock.fireCommand("/status", { ack, respond });
 
-      // Should call sendMessage with the scrum-master URL
       expect(mockSendMessage).toHaveBeenCalledWith(
         "http://localhost:10004",
         "Give me the current board status summary.",
       );
 
-      // respond is called twice: once with "fetching" message, once with result
+      // respond is called twice: once with loading, once with result
       expect(respond).toHaveBeenCalledTimes(2);
 
-      // First call: ephemeral "fetching" message
-      const firstCall = respond.mock.calls[0][0] as { response_type: string; text: string };
+      // First call: ephemeral loading with blocks
+      const firstCall = respond.mock.calls[0][0] as { response_type: string; blocks: any[]; text: string };
       expect(firstCall.response_type).toBe("ephemeral");
+      expect(firstCall.blocks).toBeDefined();
       expect(firstCall.text).toContain("Fetching");
 
-      // Second call: in_channel with actual status
-      const secondCall = respond.mock.calls[1][0] as { response_type: string; text: string };
+      // Second call: in_channel with status blocks
+      const secondCall = respond.mock.calls[1][0] as { response_type: string; blocks: any[]; text: string };
       expect(secondCall.response_type).toBe("in_channel");
+      expect(secondCall.blocks).toBeDefined();
       expect(secondCall.text).toBe("Sprint is on track.");
     });
 
-    it("handles agent error gracefully", async () => {
+    it("handles agent error gracefully with error blocks", async () => {
       const ack = makeAck();
       const respond = makeRespond();
 
@@ -204,12 +228,13 @@ describe("commands handler", () => {
 
       expect(respond).toHaveBeenCalledTimes(2);
 
-      const secondCall = respond.mock.calls[1][0] as { text: string };
+      const secondCall = respond.mock.calls[1][0] as { text: string; blocks: any[] };
       expect(secondCall.text).toContain(":x:");
       expect(secondCall.text).toContain("Agent is broken");
+      expect(secondCall.blocks).toBeDefined();
     });
 
-    it("handles agent unreachable (sendMessage throws)", async () => {
+    it("handles agent unreachable (sendMessage throws) with warning blocks", async () => {
       const ack = makeAck();
       const respond = makeRespond();
 
@@ -219,9 +244,10 @@ describe("commands handler", () => {
 
       expect(respond).toHaveBeenCalledTimes(2);
 
-      const secondCall = respond.mock.calls[1][0] as { text: string };
+      const secondCall = respond.mock.calls[1][0] as { text: string; blocks: any[] };
       expect(secondCall.text).toContain(":warning:");
       expect(secondCall.text).toContain("Could not reach");
+      expect(secondCall.blocks).toBeDefined();
     });
 
     it("returns no-status fallback when result is null", async () => {

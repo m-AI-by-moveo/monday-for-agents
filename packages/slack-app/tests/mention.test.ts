@@ -4,8 +4,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // Mock the a2a-client module BEFORE importing the handler
 // ---------------------------------------------------------------------------
 
-const mockSendMessage = vi.fn();
-const mockGetTask = vi.fn();
+const { mockSendMessage, mockGetTask } = vi.hoisted(() => ({
+  mockSendMessage: vi.fn(),
+  mockGetTask: vi.fn(),
+}));
 
 vi.mock("../src/services/a2a-client.js", () => ({
   createA2AClient: () => ({
@@ -33,16 +35,32 @@ vi.mock("uuid", () => ({
   v4: vi.fn(() => "mock-uuid-1234"),
 }));
 
+// Mock block-builder — passthrough that wraps text in a blocks array
+vi.mock("../src/ui/block-builder.js", () => ({
+  agentResponseBlocks: (agent: string, text: string) => ({
+    blocks: [{ type: "section", text: { type: "mrkdwn", text } }],
+    text,
+  }),
+  errorBlocks: (msg: string) => ({
+    blocks: [{ type: "section", text: { type: "mrkdwn", text: `:x: ${msg}` } }],
+    text: `:x: ${msg}`,
+  }),
+  warningBlocks: (msg: string) => ({
+    blocks: [{ type: "section", text: { type: "mrkdwn", text: `:warning: ${msg}` } }],
+    text: `:warning: ${msg}`,
+  }),
+  noResponseBlocks: () => ({
+    blocks: [{ type: "section", text: { type: "mrkdwn", text: "_No response from agent._" } }],
+    text: "_No response from agent._",
+  }),
+}));
+
 import { registerMentionHandler, threadMap } from "../src/handlers/mention.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Creates a mock Slack Bolt App that captures the callback registered
- * via `app.event("app_mention", callback)`.
- */
 function createMockApp() {
   let mentionCallback: (args: Record<string, unknown>) => Promise<void>;
 
@@ -54,12 +72,10 @@ function createMockApp() {
     }),
   };
 
-  // Register the handler which captures the callback
   registerMentionHandler(app as any);
 
   return {
     app,
-    /** Invoke the captured app_mention callback */
     fireMention: (args: Record<string, unknown>) => mentionCallback(args),
   };
 }
@@ -242,7 +258,6 @@ describe("mention handler", () => {
         say,
       });
 
-      // The message sent to the agent should not contain the mention
       expect(mockSendMessage).toHaveBeenCalledWith(
         expect.any(String),
         "please help me",
@@ -289,7 +304,6 @@ describe("mention handler", () => {
         say,
       });
 
-      // threadMap should now have an entry keyed by the event ts
       expect(threadMap.has(ts)).toBe(true);
       const mapping = threadMap.get(ts);
       expect(mapping?.contextId).toBe("mock-uuid-1234");
@@ -309,8 +323,6 @@ describe("mention handler", () => {
       });
 
       const threadTs = "1700000002.000001";
-
-      // Pre-populate a mapping
       threadMap.set(threadTs, { contextId: "existing-ctx", agentKey: "product-owner" });
 
       await mock.fireMention({
@@ -322,13 +334,11 @@ describe("mention handler", () => {
         say,
       });
 
-      // Should reuse existing context
       expect(mockSendMessage).toHaveBeenCalledWith(
         "http://localhost:10001",
         "follow up question",
         "existing-ctx",
       );
-      // mapping should remain unchanged
       expect(threadMap.get(threadTs)?.contextId).toBe("existing-ctx");
     });
   });
@@ -338,7 +348,7 @@ describe("mention handler", () => {
   // -------------------------------------------------------------------------
 
   describe("error handling", () => {
-    it("posts agent error response to thread when response.error is set", async () => {
+    it("posts agent error response with blocks when response.error is set", async () => {
       const say = makeSay();
       mockSendMessage.mockResolvedValue({
         jsonrpc: "2.0",
@@ -351,13 +361,16 @@ describe("mention handler", () => {
         say,
       });
 
-      expect(say).toHaveBeenCalledWith({
-        text: ":x: Agent error: Something went wrong",
-        thread_ts: expect.any(String),
-      });
+      expect(say).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining(":x:"),
+          blocks: expect.any(Array),
+          thread_ts: expect.any(String),
+        }),
+      );
     });
 
-    it("posts warning message when HTTP error occurs contacting agent", async () => {
+    it("posts warning message with blocks when HTTP error occurs", async () => {
       const say = makeSay();
       mockSendMessage.mockRejectedValue(new Error("ECONNREFUSED"));
 
@@ -366,14 +379,13 @@ describe("mention handler", () => {
         say,
       });
 
-      expect(say).toHaveBeenCalledWith({
-        text: expect.stringContaining(":warning:"),
-        thread_ts: expect.any(String),
-      });
-      expect(say).toHaveBeenCalledWith({
-        text: expect.stringContaining("product-owner"),
-        thread_ts: expect.any(String),
-      });
+      expect(say).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining(":warning:"),
+          blocks: expect.any(Array),
+          thread_ts: expect.any(String),
+        }),
+      );
     });
   });
 
@@ -382,7 +394,7 @@ describe("mention handler", () => {
   // -------------------------------------------------------------------------
 
   describe("successful response", () => {
-    it("posts extracted text from agent task result", async () => {
+    it("posts extracted text from agent task result with blocks", async () => {
       const say = makeSay();
       mockSendMessage.mockResolvedValue({
         jsonrpc: "2.0",
@@ -405,13 +417,16 @@ describe("mention handler", () => {
         say,
       });
 
-      expect(say).toHaveBeenCalledWith({
-        text: "Here is the board summary.",
-        thread_ts: expect.any(String),
-      });
+      expect(say).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: "Here is the board summary.",
+          blocks: expect.any(Array),
+          thread_ts: expect.any(String),
+        }),
+      );
     });
 
-    it("posts fallback text when result has no content", async () => {
+    it("posts no-response blocks when result is undefined", async () => {
       const say = makeSay();
       mockSendMessage.mockResolvedValue({
         jsonrpc: "2.0",
@@ -424,10 +439,13 @@ describe("mention handler", () => {
         say,
       });
 
-      expect(say).toHaveBeenCalledWith({
-        text: "_No response from agent._",
-        thread_ts: expect.any(String),
-      });
+      expect(say).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: "_No response from agent._",
+          blocks: expect.any(Array),
+          thread_ts: expect.any(String),
+        }),
+      );
     });
   });
 });

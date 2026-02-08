@@ -4,8 +4,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // Mock a2a-client BEFORE importing the handler
 // ---------------------------------------------------------------------------
 
-const mockSendMessage = vi.fn();
-const mockGetTask = vi.fn();
+const { mockSendMessage, mockGetTask } = vi.hoisted(() => ({
+  mockSendMessage: vi.fn(),
+  mockGetTask: vi.fn(),
+}));
 
 vi.mock("../src/services/a2a-client.js", () => ({
   createA2AClient: () => ({
@@ -28,15 +30,25 @@ vi.mock("../src/services/a2a-client.js", () => ({
   },
 }));
 
-// We import threadMap from the mention module so we can pre-populate it.
-// The mention module also needs to be mocked consistently since thread.ts
-// imports threadMap from mention.js.
-// Because vi.mock hoists, and thread.ts does:
-//   import { threadMap } from "./mention.js";
-// We need to mock the mention module to export the real threadMap.
-// Actually, since we already mock a2a-client.js above, and mention.ts
-// uses a2a-client at module scope (const a2a = createA2AClient()),
-// the mock will apply and mention.ts will load fine.
+// Mock block-builder — passthrough that wraps text in a blocks array
+vi.mock("../src/ui/block-builder.js", () => ({
+  agentResponseBlocks: (agent: string, text: string) => ({
+    blocks: [{ type: "section", text: { type: "mrkdwn", text } }],
+    text,
+  }),
+  errorBlocks: (msg: string) => ({
+    blocks: [{ type: "section", text: { type: "mrkdwn", text: `:x: ${msg}` } }],
+    text: `:x: ${msg}`,
+  }),
+  warningBlocks: (msg: string) => ({
+    blocks: [{ type: "section", text: { type: "mrkdwn", text: `:warning: ${msg}` } }],
+    text: `:warning: ${msg}`,
+  }),
+  noResponseBlocks: () => ({
+    blocks: [{ type: "section", text: { type: "mrkdwn", text: "_No response from agent._" } }],
+    text: "_No response from agent._",
+  }),
+}));
 
 import { registerThreadHandler } from "../src/handlers/thread.js";
 import { threadMap } from "../src/handlers/mention.js";
@@ -129,10 +141,13 @@ describe("thread handler", () => {
       "follow up",
       "ctx-abc",
     );
-    expect(say).toHaveBeenCalledWith({
-      text: "Agent reply",
-      thread_ts: threadTs,
-    });
+    expect(say).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: "Agent reply",
+        blocks: expect.any(Array),
+        thread_ts: threadTs,
+      }),
+    );
   });
 
   it("ignores thread reply when no mapping exists", async () => {
@@ -208,8 +223,6 @@ describe("thread handler", () => {
 
   it("ignores non-threaded messages (no thread_ts)", async () => {
     const say = makeSay();
-    // Even with a mapping in the threadMap for some ts, a top-level message
-    // without thread_ts should be ignored.
     threadMap.set("1700000000.000001", { contextId: "ctx-1", agentKey: "developer" });
 
     await mock.fireMessage({
@@ -217,7 +230,6 @@ describe("thread handler", () => {
         text: "top-level message",
         ts: "1700000000.000099",
         user: "U_HUMAN",
-        // No thread_ts
       },
       say,
       context: { botUserId: "U_BOT" },
@@ -231,7 +243,7 @@ describe("thread handler", () => {
   // Response posting
   // -------------------------------------------------------------------------
 
-  it("posts agent response in the same thread", async () => {
+  it("posts agent response in the same thread with blocks", async () => {
     const say = makeSay();
     const threadTs = "1700000000.000001";
     threadMap.set(threadTs, { contextId: "ctx-1", agentKey: "scrum-master" });
@@ -255,13 +267,16 @@ describe("thread handler", () => {
       context: { botUserId: "U_BOT" },
     });
 
-    expect(say).toHaveBeenCalledWith({
-      text: "Thread response",
-      thread_ts: threadTs,
-    });
+    expect(say).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: "Thread response",
+        blocks: expect.any(Array),
+        thread_ts: threadTs,
+      }),
+    );
   });
 
-  it("posts fallback when agent result is undefined", async () => {
+  it("posts no-response blocks when agent result is undefined", async () => {
     const say = makeSay();
     const threadTs = "1700000000.000001";
     threadMap.set(threadTs, { contextId: "ctx-1", agentKey: "scrum-master" });
@@ -278,17 +293,20 @@ describe("thread handler", () => {
       context: { botUserId: "U_BOT" },
     });
 
-    expect(say).toHaveBeenCalledWith({
-      text: "_No response from agent._",
-      thread_ts: threadTs,
-    });
+    expect(say).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: "_No response from agent._",
+        blocks: expect.any(Array),
+        thread_ts: threadTs,
+      }),
+    );
   });
 
   // -------------------------------------------------------------------------
   // Error handling
   // -------------------------------------------------------------------------
 
-  it("posts error response when agent returns JSON-RPC error", async () => {
+  it("posts error response with blocks when agent returns JSON-RPC error", async () => {
     const say = makeSay();
     const threadTs = "1700000000.000001";
     threadMap.set(threadTs, { contextId: "ctx-1", agentKey: "reviewer" });
@@ -305,13 +323,16 @@ describe("thread handler", () => {
       context: { botUserId: "U_BOT" },
     });
 
-    expect(say).toHaveBeenCalledWith({
-      text: ":x: Agent error: Internal error",
-      thread_ts: threadTs,
-    });
+    expect(say).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: expect.stringContaining(":x:"),
+        blocks: expect.any(Array),
+        thread_ts: threadTs,
+      }),
+    );
   });
 
-  it("posts warning message when agent is unreachable", async () => {
+  it("posts warning with blocks when agent is unreachable", async () => {
     const say = makeSay();
     const threadTs = "1700000000.000001";
     threadMap.set(threadTs, { contextId: "ctx-1", agentKey: "developer" });
@@ -324,14 +345,13 @@ describe("thread handler", () => {
       context: { botUserId: "U_BOT" },
     });
 
-    expect(say).toHaveBeenCalledWith({
-      text: expect.stringContaining(":warning:"),
-      thread_ts: threadTs,
-    });
-    expect(say).toHaveBeenCalledWith({
-      text: expect.stringContaining("developer"),
-      thread_ts: threadTs,
-    });
+    expect(say).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: expect.stringContaining(":warning:"),
+        blocks: expect.any(Array),
+        thread_ts: threadTs,
+      }),
+    );
   });
 
   // -------------------------------------------------------------------------

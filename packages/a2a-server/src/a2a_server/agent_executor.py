@@ -3,40 +3,39 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Any
 
-from a2a.server.agent_executor import AgentExecutor
-from a2a.server.events import EventQueue
+from a2a.server.agent_execution.agent_executor import AgentExecutor
+from a2a.server.events.event_queue import EventQueue
 from a2a.types import (
-    Artifact,
     Message,
     Part,
     Task,
+    TaskArtifactUpdateEvent,
     TaskState,
+    TaskStatus,
+    TaskStatusUpdateEvent,
     TextPart,
 )
-from langgraph.graph.graph import CompiledGraph
+from a2a.server.agent_execution.context import RequestContext
+from langgraph.graph.state import CompiledStateGraph
 
 from a2a_server.models import AgentDefinition
+from a2a_server.tracing import get_correlation_id
 
 logger = logging.getLogger(__name__)
 
 
-def _extract_user_message(context: Any) -> tuple[str, str]:
-    """Extract user message text and context ID from an A2A execution context.
-
-    The A2A SDK provides context with either a ``message`` or ``task``
-    attribute.  This helper normalises both cases.
+def _extract_user_message(context: RequestContext) -> tuple[str, str]:
+    """Extract user message text and context ID from an A2A RequestContext.
 
     Returns:
         A ``(message_text, context_id)`` tuple.
     """
-    context_id = getattr(context, "context_id", None) or "default"
+    context_id = context.context_id or "default"
 
-    # Try to get message from context.message first, then context.task
-    message: Message | None = getattr(context, "message", None)
-    task: Task | None = getattr(context, "task", None)
-
+    message: Message | None = context.message
     if message is not None:
         parts = message.parts or []
         text_parts = [
@@ -46,13 +45,9 @@ def _extract_user_message(context: Any) -> tuple[str, str]:
         if text_parts:
             return " ".join(text_parts), context_id
 
-        # Fallback: check for a plain text attribute
-        text = getattr(message, "text", None)
-        if text:
-            return str(text), context_id
-
+    # Try from current_task
+    task: Task | None = context.current_task
     if task is not None:
-        # Tasks may carry the original message
         task_message: Message | None = getattr(task, "message", None)
         if task_message is not None:
             parts = task_message.parts or []
@@ -75,22 +70,16 @@ class LangGraphA2AExecutor(AgentExecutor):
     are preserved.
     """
 
-    def __init__(self, graph: CompiledGraph, agent_def: AgentDefinition) -> None:
+    def __init__(self, graph: CompiledStateGraph, agent_def: AgentDefinition) -> None:
         self.graph = graph
         self.agent_def = agent_def
 
     async def execute(
         self,
-        context: Any,
+        context: RequestContext,
         event_queue: EventQueue,
     ) -> None:
-        """Execute a single A2A request by invoking the LangGraph agent.
-
-        Args:
-            context: The A2A execution context carrying the inbound message.
-            event_queue: Queue used to emit response events back to the
-                A2A caller.
-        """
+        """Execute a single A2A request by invoking the LangGraph agent."""
         agent_name = self.agent_def.metadata.name
 
         try:
@@ -98,15 +87,25 @@ class LangGraphA2AExecutor(AgentExecutor):
         except ValueError:
             logger.exception("Failed to extract message for agent '%s'", agent_name)
             await event_queue.enqueue_event(
-                self._make_error_artifact("Unable to parse the incoming message."),
+                self._make_status_event(
+                    context, TaskState.failed,
+                    "Unable to parse the incoming message.",
+                ),
             )
             return
 
+        cid = get_correlation_id()
         logger.info(
-            "Agent '%s' received message (context=%s): %.120s...",
+            "Agent '%s' received message (context=%s, correlation=%s): %.120s...",
             agent_name,
             context_id,
+            cid or "none",
             message_text,
+        )
+
+        # Signal that the agent is working
+        await event_queue.enqueue_event(
+            self._make_status_event(context, TaskState.working),
         )
 
         try:
@@ -128,33 +127,59 @@ class LangGraphA2AExecutor(AgentExecutor):
                 ai_content = "Agent did not produce a response."
 
             logger.info(
-                "Agent '%s' response (context=%s): %.120s...",
+                "Agent '%s' response (context=%s, correlation=%s): %.120s...",
                 agent_name,
                 context_id,
+                cid or "none",
                 ai_content,
             )
 
-            artifact = Artifact(
-                parts=[Part(root=TextPart(text=ai_content))],
-                name="response",
+            # Emit completed status with the response message
+            await event_queue.enqueue_event(
+                self._make_status_event(
+                    context, TaskState.completed, ai_content,
+                ),
             )
-            await event_queue.enqueue_event(artifact)
 
         except Exception:
             logger.exception("Agent '%s' failed during graph execution", agent_name)
             await event_queue.enqueue_event(
-                self._make_error_artifact(
-                    "An internal error occurred while processing your request."
+                self._make_status_event(
+                    context, TaskState.failed,
+                    "An internal error occurred while processing your request.",
                 ),
             )
+
+    async def cancel(
+        self,
+        context: RequestContext,
+        event_queue: EventQueue,
+    ) -> None:
+        """Cancel a running task."""
+        await event_queue.enqueue_event(
+            self._make_status_event(context, TaskState.canceled),
+        )
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _make_error_artifact(text: str) -> Artifact:
-        return Artifact(
-            parts=[Part(root=TextPart(text=text))],
-            name="error",
+    def _make_status_event(
+        context: RequestContext,
+        state: TaskState,
+        text: str | None = None,
+    ) -> TaskStatusUpdateEvent:
+        message = None
+        if text:
+            message = Message(
+                role="agent",
+                parts=[Part(root=TextPart(text=text))],
+                message_id=str(uuid.uuid4()),
+            )
+        return TaskStatusUpdateEvent(
+            task_id=context.task_id,
+            context_id=context.context_id,
+            status=TaskStatus(state=state, message=message),
+            final=state in (TaskState.completed, TaskState.failed, TaskState.canceled),
         )

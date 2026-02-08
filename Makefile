@@ -1,4 +1,4 @@
-.PHONY: install dev run-all run stop clean setup-board sync-agents lint test test-unit test-integration test-e2e test-evals test-slack test-all test-coverage
+.PHONY: install dev run-all run stop clean setup-board sync-agents lint test test-unit test-integration test-e2e test-evals test-slack test-all test-coverage validate doctor status
 
 # Install all dependencies
 install:
@@ -91,6 +91,18 @@ test-fast:
 # Test a single MCP tool (usage: make test-mcp TOOL=get_board_summary)
 test-mcp:
 	python -m monday_mcp.server
+
+# Validate agent YAML definitions
+validate:
+	mfa validate --agents-dir agents
+
+# Check system prerequisites and configuration
+doctor:
+	mfa doctor --agents-dir agents
+
+# Show health status of running agents
+status:
+	mfa status --agents-dir agents
 
 # Send a test A2A message to an agent (usage: make test-a2a AGENT=product-owner MSG="Build an auth system")
 test-a2a:

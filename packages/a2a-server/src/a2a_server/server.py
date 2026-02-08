@@ -4,8 +4,13 @@ from __future__ import annotations
 
 import logging
 
-from a2a.server.agent_executor import AgentExecutor
-from a2a.server.apps.starlette import A2AStarletteApplication
+from a2a.server.agent_execution.agent_executor import AgentExecutor
+from a2a.server.apps.jsonrpc.starlette_app import A2AStarletteApplication
+from a2a.server.events.in_memory_queue_manager import InMemoryQueueManager
+from a2a.server.request_handlers.default_request_handler import (
+    DefaultRequestHandler,
+)
+from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
 from a2a.types import AgentCapabilities, AgentCard, AgentSkill
 
 from a2a_server.models import AgentDefinition
@@ -43,6 +48,8 @@ def _build_agent_card(agent_def: AgentDefinition) -> AgentCard:
         version=agent_def.metadata.version,
         skills=skills,
         capabilities=capabilities,
+        default_input_modes=["text"],
+        default_output_modes=["text"],
     )
 
     logger.info(
@@ -69,6 +76,16 @@ def create_a2a_app(
         A :class:`A2AStarletteApplication` ready to be served by uvicorn.
     """
     card = _build_agent_card(agent_def)
-    app = A2AStarletteApplication(agent_card=card, agent_executor=executor)
+
+    request_handler = DefaultRequestHandler(
+        agent_executor=executor,
+        task_store=InMemoryTaskStore(),
+        queue_manager=InMemoryQueueManager(),
+    )
+
+    app = A2AStarletteApplication(
+        agent_card=card,
+        http_handler=request_handler,
+    )
     logger.info("A2A application created for agent '%s'", agent_def.metadata.name)
     return app

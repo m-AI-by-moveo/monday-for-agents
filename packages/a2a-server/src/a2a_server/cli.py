@@ -9,30 +9,68 @@ from pathlib import Path
 from typing import Any
 
 import click
+from dotenv import load_dotenv
+
+# Load .env from repo root (traverse up from this file)
+_PACKAGE_DIR = Path(__file__).resolve().parent
+_REPO_ROOT = _PACKAGE_DIR.parent.parent.parent.parent
+load_dotenv(_REPO_ROOT / ".env")
 import uvicorn
+from starlette.applications import Starlette
+from starlette.routing import Mount, Route
 
 from a2a_server.agent_executor import LangGraphA2AExecutor
 from a2a_server.agent_loader import load_agent, load_all_agents
 from a2a_server.graph import build_graph
+from a2a_server.health import health_routes, init_health
+from a2a_server.logging_config import configure_logging
 from a2a_server.models import AgentDefinition
+from a2a_server.claude_code_tool import make_claude_code_tool
 from a2a_server.registry import AgentRegistry, make_a2a_send_tool
+from a2a_server.review_pr_tool import make_review_pr_tool
 from a2a_server.server import create_a2a_app
+from a2a_server.middleware import (
+    APIKeyAuthMiddleware,
+    InputValidationMiddleware,
+    RateLimitMiddleware,
+    RequestSizeLimitMiddleware,
+    SecureHeadersMiddleware,
+)
+from a2a_server.commands.doctor import doctor_command
+from a2a_server.commands.status import status_command
+from a2a_server.commands.validate import validate_command
+from a2a_server.tracing import CorrelationMiddleware
 
 logger = logging.getLogger(__name__)
 
-# Default agents directory relative to the package root:
-# packages/a2a-server/src/a2a_server/../../../../../../agents  ->  <repo>/agents
-_PACKAGE_DIR = Path(__file__).resolve().parent
-_DEFAULT_AGENTS_DIR = _PACKAGE_DIR.parent.parent.parent.parent / "agents"
+# Default agents directory
+_DEFAULT_AGENTS_DIR = _REPO_ROOT / "agents"
 
 
-def _configure_logging(verbose: bool) -> None:
-    level = logging.DEBUG if verbose else logging.INFO
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
+def _build_starlette_app(a2a_app: Any) -> Starlette:
+    """Wrap an A2A app with health routes and middleware.
+
+    The A2A SDK app is mounted as the root, while ``/health`` and
+    ``/ready`` are added as additional routes.  Middleware is layered
+    on top of the resulting Starlette application.
+    """
+    inner = a2a_app.build()
+    app = Starlette(
+        routes=[
+            *health_routes,
+            Mount("/", app=inner),
+        ],
     )
+    # Middleware stack (outermost first): SecureHeaders → SizeLimit →
+    # RateLimit → Auth → Correlation → Validation
+    # Note: add_middleware prepends, so we add in reverse order.
+    app.add_middleware(InputValidationMiddleware)
+    app.add_middleware(CorrelationMiddleware)
+    app.add_middleware(APIKeyAuthMiddleware)
+    app.add_middleware(RateLimitMiddleware)
+    app.add_middleware(RequestSizeLimitMiddleware)
+    app.add_middleware(SecureHeadersMiddleware)
+    return app
 
 
 # -----------------------------------------------------------------------
@@ -41,9 +79,10 @@ def _configure_logging(verbose: bool) -> None:
 
 @click.group()
 @click.option("--verbose", "-v", is_flag=True, help="Enable debug logging.")
-def cli(verbose: bool) -> None:
+@click.option("--json-logs", is_flag=True, help="Output structured JSON logs.")
+def cli(verbose: bool, json_logs: bool) -> None:
     """Monday-for-Agents CLI."""
-    _configure_logging(verbose)
+    configure_logging(verbose=verbose, json_format=json_logs)
 
 
 # -----------------------------------------------------------------------
@@ -64,7 +103,11 @@ def run(agent_name: str, agents_dir: str | None) -> None:
     yaml_path = base_dir / f"{agent_name}.yaml"
 
     if not yaml_path.exists():
-        raise click.ClickException(f"Agent file not found: {yaml_path}")
+        available = [p.stem for p in base_dir.glob("*.yaml")]
+        msg = f"Agent file not found: {yaml_path}"
+        if available:
+            msg += f"\nAvailable agents: {', '.join(sorted(available))}"
+        raise click.ClickException(msg)
 
     asyncio.run(_run_single(yaml_path))
 
@@ -78,9 +121,17 @@ async def _run_single(yaml_path: Path) -> None:
     registry.register(agent_def)
     send_tool = make_a2a_send_tool(registry)
 
-    graph = await build_graph(agent_def, extra_tools=[send_tool])
+    extra_tools = [send_tool]
+    if agent_def.metadata.name == "developer":
+        extra_tools.append(make_claude_code_tool())
+    if agent_def.metadata.name == "reviewer":
+        extra_tools.append(make_review_pr_tool())
+
+    graph = await build_graph(agent_def, extra_tools=extra_tools)
     executor = LangGraphA2AExecutor(graph=graph, agent_def=agent_def)
     a2a_app = create_a2a_app(agent_def, executor)
+
+    starlette_app = _build_starlette_app(a2a_app)
 
     logger.info(
         "Starting agent '%s' on port %d",
@@ -88,8 +139,10 @@ async def _run_single(yaml_path: Path) -> None:
         agent_def.a2a.port,
     )
 
+    init_health()
+
     config = uvicorn.Config(
-        app=a2a_app.build(),
+        app=starlette_app,
         host="0.0.0.0",
         port=agent_def.a2a.port,
         log_level="info",
@@ -129,12 +182,20 @@ async def _run_all(agents_dir: Path) -> None:
     servers: list[uvicorn.Server] = []
 
     for agent_def in definitions:
-        graph = await build_graph(agent_def, extra_tools=[send_tool])
+        extra_tools = [send_tool]
+        if agent_def.metadata.name == "developer":
+            extra_tools.append(make_claude_code_tool())
+        if agent_def.metadata.name == "reviewer":
+            extra_tools.append(make_review_pr_tool())
+
+        graph = await build_graph(agent_def, extra_tools=extra_tools)
         executor = LangGraphA2AExecutor(graph=graph, agent_def=agent_def)
         a2a_app = create_a2a_app(agent_def, executor)
 
+        starlette_app = _build_starlette_app(a2a_app)
+
         config = uvicorn.Config(
-            app=a2a_app.build(),
+            app=starlette_app,
             host="0.0.0.0",
             port=agent_def.a2a.port,
             log_level="info",
@@ -147,6 +208,7 @@ async def _run_all(agents_dir: Path) -> None:
             agent_def.a2a.port,
         )
 
+    init_health()
     logger.info("Starting %d agent server(s) concurrently", len(servers))
 
     # Run all servers as concurrent tasks; cancel everything on first
@@ -178,3 +240,12 @@ async def _serve(server: uvicorn.Server) -> None:
 def _cancel_all(tasks: list[asyncio.Task[Any]]) -> None:
     for task in tasks:
         task.cancel()
+
+
+# -----------------------------------------------------------------------
+# Additional commands
+# -----------------------------------------------------------------------
+
+cli.add_command(validate_command)
+cli.add_command(doctor_command)
+cli.add_command(status_command)

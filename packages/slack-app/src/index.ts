@@ -1,4 +1,10 @@
-import "dotenv/config";
+import { config } from "dotenv";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
+
+// Load .env from repo root (two levels up from packages/slack-app/)
+const __dirname = dirname(fileURLToPath(import.meta.url));
+config({ path: resolve(__dirname, "../../../.env") });
 import { App, ExpressReceiver } from "@slack/bolt";
 import type { Request, Response } from "express";
 import { registerMentionHandler } from "./handlers/mention.js";
@@ -37,6 +43,7 @@ interface AgentNotifyBody {
   channel: string;
   text: string;
   thread_ts?: string;
+  blocks?: Array<Record<string, unknown>>;
 }
 
 // We need the Bolt app reference to post messages, so we register the route
@@ -97,6 +104,7 @@ receiver.router.post("/api/agent-notify", async (req: Request, res: Response) =>
       token: SLACK_BOT_TOKEN,
       channel: body.channel,
       text: body.text,
+      ...(body.blocks ? { blocks: body.blocks } : {}),
       ...(body.thread_ts ? { thread_ts: body.thread_ts } : {}),
     });
 

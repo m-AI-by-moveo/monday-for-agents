@@ -23,6 +23,11 @@ test = [
     "langsmith>=0.1",
 ]
 
+[tool.uv.sources]
+mfa-a2a-server = { workspace = true }
+mfa-monday-mcp = { workspace = true }
+mfa-monday-sync = { workspace = true }
+
 [tool.uv.workspace]
 members = [
     "packages/a2a-server",

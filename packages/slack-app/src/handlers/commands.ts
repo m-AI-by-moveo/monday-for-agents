@@ -4,27 +4,25 @@ import {
   extractTextFromTask,
   AGENT_URLS,
 } from "../services/a2a-client.js";
+import {
+  agentListBlocks,
+  statusDashboardBlocks,
+  loadingBlocks,
+  errorBlocks,
+  warningBlocks,
+} from "../ui/block-builder.js";
 
 const a2a = createA2AClient();
-
-// ---------------------------------------------------------------------------
-// /agents — list registered agents
-// ---------------------------------------------------------------------------
-
-function buildAgentList(): string {
-  const lines = Object.entries(AGENT_URLS).map(
-    ([name, url]) => `*${name}*  \u2192  \`${url}\``,
-  );
-  return [":robot_face: *Registered Agents*", "", ...lines].join("\n");
-}
 
 // ---------------------------------------------------------------------------
 // /status — query Scrum Master for board status
 // ---------------------------------------------------------------------------
 
-async function fetchBoardStatus(): Promise<string> {
+async function fetchBoardStatus(): Promise<{ blocks: any[]; text: string }> {
   const agentUrl = AGENT_URLS["scrum-master"];
-  if (!agentUrl) return "Scrum Master agent is not configured.";
+  if (!agentUrl) {
+    return errorBlocks("Scrum Master agent is not configured.");
+  }
 
   try {
     const response = await a2a.sendMessage(
@@ -33,15 +31,17 @@ async function fetchBoardStatus(): Promise<string> {
     );
 
     if (response.error) {
-      return `:x: Agent error: ${response.error.message}`;
+      return errorBlocks(`Agent error: ${response.error.message}`);
     }
 
-    return response.result
-      ? extractTextFromTask(response.result)
-      : "_No status available from agent._";
+    if (response.result) {
+      const statusText = extractTextFromTask(response.result);
+      return statusDashboardBlocks(statusText);
+    }
+    return { blocks: [], text: "_No status available from agent._" };
   } catch (err) {
     console.error("[commands] /status failed:", err);
-    return ":warning: Could not reach the Scrum Master agent.";
+    return warningBlocks("Could not reach the Scrum Master agent.");
   }
 }
 
@@ -53,18 +53,26 @@ export function registerCommands(app: App): void {
   app.command("/agents", async ({ ack, respond }) => {
     await ack();
     console.log("[commands] /agents invoked");
-    await respond({ response_type: "ephemeral", text: buildAgentList() });
+    const { blocks, text } = agentListBlocks(AGENT_URLS);
+    await respond({ response_type: "ephemeral", blocks, text });
   });
 
   app.command("/status", async ({ ack, respond }) => {
     await ack();
     console.log("[commands] /status invoked");
+
+    const loading = loadingBlocks("Fetching board status from Scrum Master...");
     await respond({
       response_type: "ephemeral",
-      text: ":hourglass_flowing_sand: Fetching board status from Scrum Master...",
+      blocks: loading.blocks,
+      text: loading.text,
     });
 
-    const statusText = await fetchBoardStatus();
-    await respond({ response_type: "in_channel", text: statusText });
+    const result = await fetchBoardStatus();
+    await respond({
+      response_type: "in_channel",
+      blocks: result.blocks,
+      text: result.text,
+    });
   });
 }

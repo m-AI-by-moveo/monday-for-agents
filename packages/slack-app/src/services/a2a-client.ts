@@ -1,12 +1,15 @@
 import axios, { AxiosError } from "axios";
 import { v4 as uuidv4 } from "uuid";
 
+const MFA_API_KEY = process.env.MFA_API_KEY || "";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 export interface A2APart {
-  type: "text";
+  type?: "text";
+  kind?: "text";
   text: string;
 }
 
@@ -67,7 +70,10 @@ function buildJsonRpcRequest(method: string, params: Record<string, unknown>) {
 export function extractTextFromTask(task: A2ATask): string {
   const msg = task.status?.message;
   if (msg) {
-    const textPart = msg.parts.find((p) => p.type === "text");
+    // SDK v0.3+ uses "kind" instead of "type" for part discriminator
+    const textPart = msg.parts.find(
+      (p: any) => p.type === "text" || p.kind === "text",
+    );
     if (textPart) return textPart.text;
   }
   return `[Agent task ${task.id} is ${task.status.state}]`;
@@ -92,8 +98,15 @@ export function createA2AClient(): A2AClient {
     console.log(`[a2a-client] POST ${agentUrl} method=${method}`);
 
     try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "X-Correlation-ID": uuidv4(),
+      };
+      if (MFA_API_KEY) {
+        headers["X-API-Key"] = MFA_API_KEY;
+      }
       const res = await axios.post<A2AResponse>(agentUrl, body, {
-        headers: { "Content-Type": "application/json" },
+        headers,
         timeout: 120_000, // 2 min – agents may take a while
       });
       const data = res.data;
@@ -125,6 +138,7 @@ export function createA2AClient(): A2AClient {
         message: {
           role: "user",
           parts: [{ type: "text", text: message }],
+          messageId: uuidv4(),
         },
       };
       if (contextId) {

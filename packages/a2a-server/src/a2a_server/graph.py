@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import sys
 from typing import Any
@@ -10,7 +11,7 @@ from typing import Any
 from langchain_anthropic import ChatAnthropic
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph.graph import CompiledGraph
+from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import create_react_agent
 
 from a2a_server.models import AgentDefinition, MCPServerRef
@@ -83,6 +84,7 @@ def _resolve_mcp_server_command(ref: MCPServerRef) -> dict[str, Any]:
             "command": command,
             "args": args,
             "transport": "stdio",
+            "env": dict(os.environ),
         }
 
     raise ValueError(
@@ -94,7 +96,7 @@ def _resolve_mcp_server_command(ref: MCPServerRef) -> dict[str, Any]:
 async def build_graph(
     agent_def: AgentDefinition,
     extra_tools: list[Any] | None = None,
-) -> CompiledGraph:
+) -> CompiledStateGraph:
     """Build and compile a LangGraph ReAct agent from *agent_def*.
 
     Args:

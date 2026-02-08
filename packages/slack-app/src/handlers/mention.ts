@@ -6,6 +6,12 @@ import {
   AGENT_URLS,
   type A2AResponse,
 } from "../services/a2a-client.js";
+import {
+  agentResponseBlocks,
+  errorBlocks,
+  warningBlocks,
+  noResponseBlocks,
+} from "../ui/block-builder.js";
 
 // ---------------------------------------------------------------------------
 // State — in-memory mapping between Slack threads and A2A context IDs
@@ -70,10 +76,8 @@ export function registerMentionHandler(app: App): void {
       const agentKey = pickAgent(messageText);
       const agentUrl = AGENT_URLS[agentKey];
       if (!agentUrl) {
-        await say({
-          text: `Unknown agent: ${agentKey}`,
-          thread_ts: event.ts,
-        });
+        const { blocks, text } = errorBlocks(`Unknown agent: ${agentKey}`);
+        await say({ blocks, text, thread_ts: event.ts });
         return;
       }
 
@@ -97,26 +101,29 @@ export function registerMentionHandler(app: App): void {
         response = await a2a.sendMessage(agentUrl, messageText, mapping.contextId);
       } catch (err) {
         console.error("[mention] Failed to contact agent:", err);
-        await say({
-          text: `:warning: Could not reach the *${agentKey}* agent. Please try again later.`,
-          thread_ts: threadTs,
-        });
+        const { blocks, text } = warningBlocks(
+          `Could not reach the *${agentKey}* agent. Please try again later.`,
+        );
+        await say({ blocks, text, thread_ts: threadTs });
         return;
       }
 
       if (response.error) {
-        await say({
-          text: `:x: Agent error: ${response.error.message}`,
-          thread_ts: threadTs,
-        });
+        const { blocks, text } = errorBlocks(
+          `Agent error: ${response.error.message}`,
+        );
+        await say({ blocks, text, thread_ts: threadTs });
         return;
       }
 
-      const replyText = response.result
-        ? extractTextFromTask(response.result)
-        : "_No response from agent._";
-
-      await say({ text: replyText, thread_ts: threadTs });
+      if (response.result) {
+        const replyText = extractTextFromTask(response.result);
+        const { blocks, text } = agentResponseBlocks(agentKey, replyText);
+        await say({ blocks, text, thread_ts: threadTs });
+      } else {
+        const { blocks, text } = noResponseBlocks();
+        await say({ blocks, text, thread_ts: threadTs });
+      }
     },
   );
 }

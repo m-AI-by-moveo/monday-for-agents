@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -10,6 +11,8 @@ import httpx
 from langchain_core.tools import BaseTool, tool
 
 from a2a_server.models import AgentDefinition
+from a2a_server.resilience import CircuitBreaker, retry_with_backoff
+from a2a_server.tracing import get_correlation_id
 
 logger = logging.getLogger(__name__)
 
@@ -67,11 +70,24 @@ class AgentRegistry:
         return registry
 
 
+# Per-agent circuit breakers for inter-agent calls
+_circuit_breakers: dict[str, CircuitBreaker] = {}
+
+
+def _get_circuit_breaker(agent_name: str) -> CircuitBreaker:
+    if agent_name not in _circuit_breakers:
+        _circuit_breakers[agent_name] = CircuitBreaker(
+            failure_threshold=5, recovery_timeout=60.0,
+        )
+    return _circuit_breakers[agent_name]
+
+
 def make_a2a_send_tool(registry: AgentRegistry) -> BaseTool:
     """Create a LangChain tool that sends an A2A message to another agent.
 
     The returned tool looks up the target agent's URL in *registry* and
     dispatches an A2A ``message/send`` JSON-RPC request via httpx.
+    Calls are wrapped with retry + circuit breaker for resilience.
 
     Args:
         registry: The :class:`AgentRegistry` used for agent URL resolution.
@@ -99,34 +115,44 @@ def make_a2a_send_tool(registry: AgentRegistry) -> BaseTool:
                 f"Available agents: {available}"
             )
 
-        jsonrpc_payload: dict[str, Any] = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "message/send",
-            "params": {
-                "message": {
-                    "role": "user",
-                    "parts": [{"kind": "text", "text": message}],
-                    "messageId": "tool-msg-1",
+        cb = _get_circuit_breaker(agent_name)
+        if not cb.allow_request():
+            return (
+                f"Circuit breaker is open for agent '{agent_name}'. "
+                "The agent appears to be down — please try again later."
+            )
+
+        async def _do_send() -> str:
+            jsonrpc_payload: dict[str, Any] = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "message/send",
+                "params": {
+                    "message": {
+                        "role": "user",
+                        "parts": [{"kind": "text", "text": message}],
+                        "messageId": "tool-msg-1",
+                    },
                 },
-            },
-        }
+            }
 
-        logger.info("Sending A2A message to agent '%s' at %s", agent_name, url)
+            headers: dict[str, str] = {"Content-Type": "application/json"}
+            cid = get_correlation_id()
+            if cid:
+                headers["X-Correlation-ID"] = cid
+            api_key = os.environ.get("MFA_API_KEY", "")
+            if api_key:
+                headers["X-API-Key"] = api_key
 
-        try:
+            logger.info("Sending A2A message to agent '%s' at %s", agent_name, url)
+
             async with httpx.AsyncClient(timeout=120.0) as client:
-                response = await client.post(url, json=jsonrpc_payload)
+                response = await client.post(url, json=jsonrpc_payload, headers=headers)
                 response.raise_for_status()
                 data = response.json()
-        except httpx.HTTPError:
-            logger.exception("HTTP error sending message to agent '%s'", agent_name)
-            return f"Failed to communicate with agent '{agent_name}'."
 
-        # Extract response text from the JSON-RPC result
-        try:
+            # Extract response text from the JSON-RPC result
             result = data.get("result", {})
-            # The result may contain artifacts with text parts
             artifacts = result.get("artifacts", [])
             texts: list[str] = []
             for artifact in artifacts:
@@ -136,12 +162,23 @@ def make_a2a_send_tool(registry: AgentRegistry) -> BaseTool:
             if texts:
                 return "\n".join(texts)
 
-            # Fallback: try to find text in the result directly
             if "text" in result:
                 return result["text"]
 
             return str(result)
+
+        try:
+            result = await retry_with_backoff(
+                _do_send, max_retries=2, base_delay=1.0,
+            )
+            cb.record_success()
+            return result
+        except httpx.HTTPError:
+            cb.record_failure()
+            logger.exception("HTTP error sending message to agent '%s'", agent_name)
+            return f"Failed to communicate with agent '{agent_name}'."
         except Exception:
+            cb.record_failure()
             logger.exception("Failed to parse response from agent '%s'", agent_name)
             return f"Received unparseable response from agent '{agent_name}'."
 

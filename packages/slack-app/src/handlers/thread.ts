@@ -6,6 +6,12 @@ import {
   type A2AResponse,
 } from "../services/a2a-client.js";
 import { threadMap } from "./mention.js";
+import {
+  agentResponseBlocks,
+  errorBlocks,
+  warningBlocks,
+  noResponseBlocks,
+} from "../ui/block-builder.js";
 
 const a2a = createA2AClient();
 
@@ -56,26 +62,29 @@ export function registerThreadHandler(app: App): void {
         );
       } catch (err) {
         console.error("[thread] Failed to contact agent:", err);
-        await say({
-          text: `:warning: Could not reach the *${mapping.agentKey}* agent. Please try again later.`,
-          thread_ts: threadTs,
-        });
+        const { blocks, text } = warningBlocks(
+          `Could not reach the *${mapping.agentKey}* agent. Please try again later.`,
+        );
+        await say({ blocks, text, thread_ts: threadTs });
         return;
       }
 
       if (response.error) {
-        await say({
-          text: `:x: Agent error: ${response.error.message}`,
-          thread_ts: threadTs,
-        });
+        const { blocks, text } = errorBlocks(
+          `Agent error: ${response.error.message}`,
+        );
+        await say({ blocks, text, thread_ts: threadTs });
         return;
       }
 
-      const replyText = response.result
-        ? extractTextFromTask(response.result)
-        : "_No response from agent._";
-
-      await say({ text: replyText, thread_ts: threadTs });
+      if (response.result) {
+        const replyText = extractTextFromTask(response.result);
+        const { blocks, text } = agentResponseBlocks(mapping.agentKey, replyText);
+        await say({ blocks, text, thread_ts: threadTs });
+      } else {
+        const { blocks, text } = noResponseBlocks();
+        await say({ blocks, text, thread_ts: threadTs });
+      }
     },
   );
 }
