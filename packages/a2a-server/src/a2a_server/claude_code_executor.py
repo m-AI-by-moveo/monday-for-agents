@@ -135,6 +135,12 @@ class ClaudeCodeExecutor(AgentExecutor):
                 claude_bin, message_text, mcp_config_file.name, context_id,
             )
 
+            # Prepend board link if the agent didn't include one
+            board_id = self.agent_def.monday.board_id if self.agent_def.monday else ""
+            if board_id and "monday.com/boards/" not in result_text:
+                board_link = f"https://monday.com/boards/{board_id}"
+                result_text = f"{board_link}\n\n{result_text}"
+
             logger.info(
                 "Agent '%s' response (context=%s): %.120s...",
                 agent_name, context_id, result_text,

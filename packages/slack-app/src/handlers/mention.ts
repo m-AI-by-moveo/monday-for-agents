@@ -52,15 +52,40 @@ function pickAgent(text: string): string {
 /** Cached bot user ID – resolved once on first mention. */
 let botUserId: string | null = null;
 
-/** Cached mapping of Slack user ID → display name (populated lazily). */
+/** Cached mapping of Slack user ID → display name. */
 const userNameCache = new Map<string, string>();
 
+let staticMapLoaded = false;
+
 /**
- * Populate the user name cache from the full Slack user list.
- * This uses the `users.list` endpoint which only requires the `users:read`
- * scope — but if that scope is missing too, we fall back gracefully.
+ * Load static user mappings from SLACK_USER_MAP env var (JSON object).
+ * Example: SLACK_USER_MAP={"U0AD6S4BWNL":"Or Bruchim","U12345":"John"}
+ * Called lazily (not at import time) so dotenv has loaded the .env first.
+ */
+function loadStaticUserMap(): void {
+  if (staticMapLoaded) return;
+  staticMapLoaded = true;
+  const raw = process.env.SLACK_USER_MAP;
+  if (!raw) return;
+  try {
+    const map = JSON.parse(raw) as Record<string, string>;
+    for (const [id, name] of Object.entries(map)) {
+      userNameCache.set(id, name);
+    }
+    console.log(`[mention] Loaded ${Object.keys(map).length} static user mapping(s) from SLACK_USER_MAP`);
+  } catch {
+    console.warn("[mention] Failed to parse SLACK_USER_MAP env var");
+  }
+}
+
+/**
+ * Populate the user name cache from the Slack API (requires users:read scope).
+ * Falls back to static mapping if the scope is missing.
  */
 async function ensureUserCache(client: WebClient): Promise<void> {
+  // Load static mappings first (lazy — .env is loaded by now)
+  loadStaticUserMap();
+  // If we already have entries (from static map or previous API call), skip
   if (userNameCache.size > 0) return;
   try {
     let cursor: string | undefined;
@@ -78,12 +103,17 @@ async function ensureUserCache(client: WebClient): Promise<void> {
       }
       cursor = res.response_metadata?.next_cursor || undefined;
     } while (cursor);
-    console.log(`[mention] Cached ${userNameCache.size} Slack users`);
+    console.log(`[mention] Cached ${userNameCache.size} Slack users from API`);
   } catch (err: any) {
-    console.warn(
-      `[mention] Could not load user list (${err?.data?.error || err?.message}). ` +
-      "Add the 'users:read' scope to the Slack app to enable @mention resolution.",
-    );
+    const errMsg = err?.data?.error || err?.message;
+    if (errMsg === "missing_scope") {
+      console.warn(
+        "[mention] users:read scope missing. Using static SLACK_USER_MAP. " +
+        "Add users:read scope and reinstall the app for automatic resolution.",
+      );
+    } else {
+      console.warn(`[mention] Could not load user list: ${errMsg}`);
+    }
   }
 }
 
@@ -101,14 +131,13 @@ async function resolveMentions(
     botUserId = auth.user_id as string;
   }
 
-  // Pre-load the full user list (cached after first call)
+  // Try loading from API (skips if cache already has entries from static map)
   await ensureUserCache(client);
 
   const mentionRegex = /<@([A-Z0-9]+)>/g;
   let result = text;
   let match: RegExpExecArray | null;
 
-  // Collect all matches first (regex is stateful)
   const matches: Array<{ full: string; userId: string }> = [];
   while ((match = mentionRegex.exec(text)) !== null) {
     matches.push({ full: match[0], userId: match[1] });
