@@ -33,14 +33,15 @@ def _get_tool(name: str) -> Any:
 
 
 @pytest.mark.unit
-def test_all_eight_tools_are_registered() -> None:
-    """The MCP server registers exactly 8 tools."""
+def test_all_tools_are_registered() -> None:
+    """The MCP server registers exactly 9 tools."""
     tool_names = _get_tool_names()
     expected = {
         "create_task",
         "update_task_status",
         "get_my_tasks",
         "get_task_details",
+        "get_board_groups",
         "get_board_summary",
         "add_task_comment",
         "create_subtask",

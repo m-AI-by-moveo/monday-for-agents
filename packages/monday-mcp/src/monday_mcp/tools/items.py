@@ -58,6 +58,44 @@ def _build_column_values(
 # ---------------------------------------------------------------------------
 
 
+async def _resolve_group_id(client: Any, board_id: int, group_id: str) -> str:
+    """Resolve a group ID or group title to the actual Monday.com group ID.
+
+    If *group_id* matches an existing group ID exactly, it is returned as-is.
+    Otherwise, the board's groups are fetched and a case-insensitive title
+    match is attempted.  Falls back to the first group on the board if no
+    match is found.
+    """
+    board = await client.get_board(board_id)
+    groups = board.get("groups", [])
+
+    # Direct ID match
+    for g in groups:
+        if g["id"] == group_id:
+            return group_id
+
+    # Title match (case-insensitive)
+    for g in groups:
+        if g["title"].lower() == group_id.lower():
+            logger.info(
+                "Resolved group title '%s' to ID '%s' on board %s",
+                group_id, g["id"], board_id,
+            )
+            return g["id"]
+
+    # Fallback: use the first group
+    if groups:
+        logger.warning(
+            "Group '%s' not found on board %s. Using first group '%s' (id=%s). "
+            "Available groups: %s",
+            group_id, board_id, groups[0]["title"], groups[0]["id"],
+            [(g["id"], g["title"]) for g in groups],
+        )
+        return groups[0]["id"]
+
+    raise ValueError(f"Board {board_id} has no groups")
+
+
 async def create_task(
     board_id: int,
     group_id: str,
@@ -73,7 +111,9 @@ async def create_task(
 
     Args:
         board_id: The ID of the Monday.com board.
-        group_id: The ID of the group to create the item in.
+        group_id: The ID or display name of the group to create the item in.
+            If a display name is provided (e.g. "To Do"), it will be resolved
+            to the actual group ID automatically.
         name: The name / title of the task.
         status: Task status. One of: To Do, In Progress, In Review, Done, Blocked.
         assignee: Name of the person or agent assigned to this task.
@@ -86,6 +126,10 @@ async def create_task(
         The created item data from Monday.com.
     """
     client = get_client()
+
+    # Resolve group name to ID if needed
+    resolved_group_id = await _resolve_group_id(client, board_id, group_id)
+
     column_values = _build_column_values(
         status=status,
         assignee=assignee,
@@ -96,7 +140,7 @@ async def create_task(
 
     item = await client.create_item(
         board_id=board_id,
-        group_id=group_id,
+        group_id=resolved_group_id,
         item_name=name,
         column_values=column_values or None,
     )

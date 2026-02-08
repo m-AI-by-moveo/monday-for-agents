@@ -83,7 +83,10 @@ prompt:
     Create this PRD as a Monday.com task with type "Spike" and add the full PRD content as a comment on that task.
 
     ## Phase 2: Task Breakdown
-    After the PRD is created, break it into sequenced implementation tasks:
+    After the PRD is created, break it into sequenced implementation tasks.
+
+    **IMPORTANT — Group ID Discovery:**
+    Before creating any tasks, call `get_board_groups(board_id)` to discover the valid group IDs on the target board. Use the actual group ID (not the display name) when calling `create_task`. The `create_task` tool also accepts group display names (e.g., "To Do") and will resolve them automatically, but using the actual ID is more reliable.
 
     ### Task Naming Convention
     Prefix each task name with its sequence number:

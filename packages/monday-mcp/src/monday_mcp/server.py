@@ -8,7 +8,10 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from monday_mcp.tools.boards import get_board_summary as _get_board_summary
+from monday_mcp.tools.boards import (
+    get_board_groups as _get_board_groups,
+    get_board_summary as _get_board_summary,
+)
 from monday_mcp.tools.items import (
     create_task as _create_task,
     get_my_tasks as _get_my_tasks,
@@ -116,6 +119,20 @@ async def get_task_details(item_id: int) -> str:
         item_id: The ID of the item to retrieve.
     """
     result = await _get_task_details(item_id=item_id)
+    return json.dumps(result)
+
+
+@mcp.tool()
+async def get_board_groups(board_id: int) -> str:
+    """Get all groups on a Monday.com board with their IDs and display names.
+
+    Call this BEFORE creating tasks to discover valid group IDs for the target board.
+    The group_id returned here is what you pass to create_task.
+
+    Args:
+        board_id: The ID of the Monday.com board.
+    """
+    result = await _get_board_groups(board_id=board_id)
     return json.dumps(result)
 
 

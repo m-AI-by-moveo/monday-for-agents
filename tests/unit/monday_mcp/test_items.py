@@ -25,6 +25,16 @@ from monday_mcp.tools.items import (
 def mock_client() -> AsyncMock:
     """Return a mock MondayClient with all async methods pre-configured."""
     client = AsyncMock()
+    # Default board response for group resolution in create_task
+    client.get_board.return_value = {
+        "id": "123456789",
+        "name": "Test Board",
+        "groups": [
+            {"id": "topics", "title": "To Do", "color": "#579bfc"},
+            {"id": "new_group", "title": "In Progress", "color": "#fdab3d"},
+        ],
+        "columns": [],
+    }
     return client
 
 

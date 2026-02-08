@@ -10,6 +10,24 @@ from monday_mcp.client import get_client
 logger = logging.getLogger(__name__)
 
 
+async def get_board_groups(board_id: int) -> list[dict[str, str]]:
+    """Get all groups on a board with their IDs and display names.
+
+    Use this to discover valid group IDs before creating tasks.
+
+    Args:
+        board_id: The ID of the Monday.com board.
+
+    Returns:
+        A list of dicts with ``id``, ``title``, and ``color`` for each group.
+    """
+    client = get_client()
+    board = await client.get_board(board_id)
+    groups = board.get("groups", [])
+    logger.info("Board %s has %d groups", board_id, len(groups))
+    return groups
+
+
 async def get_board_summary(board_id: int) -> dict[str, Any]:
     """Get a summary of all tasks on a board, grouped by status.
 
