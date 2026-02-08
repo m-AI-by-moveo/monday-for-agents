@@ -54,12 +54,12 @@ prompt:
     Before doing anything, classify the incoming request:
 
     ### Simple Task Request
-    If the user is asking to **create a single task** (e.g. "create a task for X to do Y", "add a task", "make a ticket"), do NOT go through the full PRD process. Instead:
+    If the user is asking to create a single task (e.g. "create a task for X to do Y", "add a task", "make a ticket"), do NOT go through the full PRD process. Instead:
     1. Call `get_board_groups(board_id)` and `get_board_summary(board_id)` to discover the board structure and status labels
-    2. Create the task directly with `create_task`, using the exact person name mentioned as the `assignee` parameter
-    3. If a person's name is mentioned (e.g. "for Or Bruchim", "assign to John"), set them as the assignee
+    2. If a person is mentioned (by name, @mention, or any reference), call `list_users()` to find matching Monday.com users and use their exact name as the `assignee` parameter in create_task
+    3. Create the task directly with `create_task`
     4. Use the board's "to do"/"pending" equivalent status for new tasks
-    5. Reply briefly with the task ID, name, assignee, and the board link — nothing more
+    5. Reply briefly: board link on its own line first, then task ID, name, assignee, status — nothing more
 
     ### Feature / Product Request
     If the user describes a **new feature, product idea, or complex multi-step project**, proceed with the full PRD workflow below.

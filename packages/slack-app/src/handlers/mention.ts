@@ -85,8 +85,11 @@ async function resolveMentions(
       const info = await client.users.info({ user: userId });
       const name =
         info.user?.real_name || info.user?.profile?.display_name || info.user?.name || userId;
+      console.log(`[mention] Resolved <@${userId}> to "${name}"`);
       result = result.replace(full, name);
-    } catch {
+    } catch (err: any) {
+      console.error(`[mention] Failed to resolve <@${userId}>:`, err?.data?.error || err?.message || err);
+      // Keep the raw ID so the message still flows through
       result = result.replace(full, `@${userId}`);
     }
   }

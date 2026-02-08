@@ -12,6 +12,7 @@ from monday_mcp.tools.boards import (
     get_board_groups as _get_board_groups,
     get_board_summary as _get_board_summary,
 )
+from monday_mcp.client import get_client
 from monday_mcp.tools.items import (
     create_task as _create_task,
     get_my_tasks as _get_my_tasks,
@@ -189,6 +190,19 @@ async def create_subtask(
         assignee=assignee,
     )
     return json.dumps(result)
+
+
+@mcp.tool()
+async def list_users() -> str:
+    """List all users in the Monday.com account.
+
+    Returns user IDs and names. Use this to find the correct person name
+    when you need to assign a task to someone. The name returned here is
+    what you should pass as the 'assignee' parameter to create_task.
+    """
+    client = get_client()
+    users = await client.get_users()
+    return json.dumps(users)
 
 
 @mcp.tool()

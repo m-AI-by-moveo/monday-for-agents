@@ -8,6 +8,29 @@
 import type { KnownBlock, Block } from "@slack/bolt";
 
 // ---------------------------------------------------------------------------
+// Markdown → Slack mrkdwn conversion
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert GitHub-flavored Markdown (from LLM output) to Slack mrkdwn.
+ *
+ * Key differences:
+ * - Bold: **text** → *text*
+ * - Headings: ## text → *text*
+ * - Strikethrough is the same (~text~)
+ * - Links are the same ([text](url))
+ */
+function markdownToMrkdwn(md: string): string {
+  return (
+    md
+      // Headings → bold (must come before bold conversion)
+      .replace(/^#{1,6}\s+(.+)$/gm, "*$1*")
+      // Bold: **text** → *text*  (avoid converting already-single *)
+      .replace(/\*\*(.+?)\*\*/g, "*$1*")
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Agent response
 // ---------------------------------------------------------------------------
 
@@ -15,10 +38,11 @@ export function agentResponseBlocks(
   agentName: string,
   responseText: string,
 ): { blocks: (KnownBlock | Block)[]; text: string } {
+  const converted = markdownToMrkdwn(responseText);
   const blocks: (KnownBlock | Block)[] = [
     {
       type: "section",
-      text: { type: "mrkdwn", text: responseText },
+      text: { type: "mrkdwn", text: converted },
     },
     {
       type: "context",
