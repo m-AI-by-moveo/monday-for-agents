@@ -6,8 +6,13 @@ import type { ScheduledJobContext, ScheduledJobDefinition, ScheduledJobResult } 
 // Stale task checker job
 // ---------------------------------------------------------------------------
 
-const STALE_CHECK_PROMPT =
-  "Check for stuck or stale tasks on the board. Use the board ID from your system prompt. If there are tasks that have been in the same status too long based on the thresholds, list them with details. If there are NO stale tasks, respond with exactly: NO_STALE_TASKS";
+function getStaleCheckPrompt(): string {
+  const boardId = process.env.MONDAY_BOARD_ID || "";
+  if (!boardId) {
+    console.warn("[stale-task-checker] MONDAY_BOARD_ID not set — agent may not know which board to check");
+  }
+  return `Check for stuck or stale tasks on Monday.com board ${boardId}. Call get_board_summary(board_id=${boardId}) first, then check for tasks that have been in the same status too long based on the thresholds. If there are NO stale tasks, respond with exactly: NO_STALE_TASKS`;
+}
 
 /** Sentinel value the scrum-master returns when nothing is stale */
 const NO_STALE_SENTINEL = "NO_STALE_TASKS";
@@ -27,7 +32,7 @@ const SUPPRESSED_PATTERNS = [
 async function execute(ctx: ScheduledJobContext): Promise<ScheduledJobResult> {
   const a2a = createA2AClient();
 
-  const response = await a2a.sendMessage(ctx.scrumMasterUrl, STALE_CHECK_PROMPT);
+  const response = await a2a.sendMessage(ctx.scrumMasterUrl, getStaleCheckPrompt());
 
   if (response.error) {
     return {
