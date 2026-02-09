@@ -20,6 +20,10 @@ from monday_mcp.client import (
     get_client,
 )
 
+# MondayClient uses httpx.AsyncClient(base_url=MONDAY_API_URL) and posts to
+# "", which resolves to the base URL with a trailing slash.
+_API_URL = f"{MONDAY_API_URL}/"
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -78,7 +82,7 @@ def test_init_raises_without_token(monkeypatch: pytest.MonkeyPatch) -> None:
 @respx.mock
 async def test_execute_returns_data_on_success(client: MondayClient) -> None:
     """execute() returns the 'data' portion of a successful response."""
-    respx.post(MONDAY_API_URL).mock(
+    respx.post(_API_URL).mock(
         return_value=httpx.Response(
             200,
             json={"data": {"boards": [{"id": "1"}]}},
@@ -95,7 +99,7 @@ async def test_execute_raises_monday_api_error_on_errors_field(
     client: MondayClient,
 ) -> None:
     """execute() raises MondayAPIError when the response contains 'errors'."""
-    respx.post(MONDAY_API_URL).mock(
+    respx.post(_API_URL).mock(
         return_value=httpx.Response(
             200,
             json={
@@ -115,7 +119,7 @@ async def test_execute_raises_monday_api_error_on_error_message_field(
     client: MondayClient,
 ) -> None:
     """execute() raises MondayAPIError when the response has an 'error_message' field."""
-    respx.post(MONDAY_API_URL).mock(
+    respx.post(_API_URL).mock(
         return_value=httpx.Response(
             200,
             json={"error_message": "Authentication failed"},
@@ -130,7 +134,7 @@ async def test_execute_raises_monday_api_error_on_error_message_field(
 @respx.mock
 async def test_execute_raises_on_http_error(client: MondayClient) -> None:
     """execute() raises httpx.HTTPStatusError on non-2xx responses."""
-    respx.post(MONDAY_API_URL).mock(
+    respx.post(_API_URL).mock(
         return_value=httpx.Response(500, json={"error": "Internal Server Error"})
     )
     with pytest.raises(httpx.HTTPStatusError):
@@ -142,7 +146,7 @@ async def test_execute_raises_on_http_error(client: MondayClient) -> None:
 @respx.mock
 async def test_execute_sends_variables(client: MondayClient) -> None:
     """execute() includes variables in the request payload."""
-    route = respx.post(MONDAY_API_URL).mock(
+    route = respx.post(_API_URL).mock(
         return_value=httpx.Response(200, json={"data": {"boards": []}})
     )
     await client.execute("query ($id: ID!) { boards(ids: [$id]) { id } }", {"id": "42"})
@@ -156,7 +160,7 @@ async def test_execute_sends_variables(client: MondayClient) -> None:
 @respx.mock
 async def test_execute_tracks_complexity(client: MondayClient) -> None:
     """execute() records complexity points from the response."""
-    respx.post(MONDAY_API_URL).mock(
+    respx.post(_API_URL).mock(
         return_value=httpx.Response(
             200,
             json={
@@ -182,7 +186,7 @@ async def test_get_board_returns_first_board(
     monday_board_response: dict[str, Any],
 ) -> None:
     """get_board() returns the first board from the response."""
-    respx.post(MONDAY_API_URL).mock(
+    respx.post(_API_URL).mock(
         return_value=httpx.Response(200, json=monday_board_response)
     )
     board = await client.get_board(123456789)
@@ -195,7 +199,7 @@ async def test_get_board_returns_first_board(
 @respx.mock
 async def test_get_board_raises_when_not_found(client: MondayClient) -> None:
     """get_board() raises MondayAPIError when board is not found."""
-    respx.post(MONDAY_API_URL).mock(
+    respx.post(_API_URL).mock(
         return_value=httpx.Response(
             200,
             json={"data": {"boards": []}},
@@ -218,7 +222,7 @@ async def test_get_items_returns_items_page_with_cursor(
     monday_items_response: dict[str, Any],
 ) -> None:
     """get_items() returns the items_page dict with cursor and items."""
-    respx.post(MONDAY_API_URL).mock(
+    respx.post(_API_URL).mock(
         return_value=httpx.Response(200, json=monday_items_response)
     )
     page = await client.get_items(123456789)
@@ -235,7 +239,7 @@ async def test_get_item_returns_item_details(
     monday_item_detail_response: dict[str, Any],
 ) -> None:
     """get_item() returns the full item with subitems and updates."""
-    respx.post(MONDAY_API_URL).mock(
+    respx.post(_API_URL).mock(
         return_value=httpx.Response(200, json=monday_item_detail_response)
     )
     item = await client.get_item(111)
@@ -252,7 +256,7 @@ async def test_create_item_sends_correct_variables(
     monday_create_item_response: dict[str, Any],
 ) -> None:
     """create_item() sends the correct GraphQL variables."""
-    route = respx.post(MONDAY_API_URL).mock(
+    route = respx.post(_API_URL).mock(
         return_value=httpx.Response(200, json=monday_create_item_response)
     )
     column_vals = {"status": {"label": "To Do"}}
@@ -279,7 +283,7 @@ async def test_change_column_values_json_encodes(
     monday_change_columns_response: dict[str, Any],
 ) -> None:
     """change_column_values() JSON-encodes the column_values parameter."""
-    route = respx.post(MONDAY_API_URL).mock(
+    route = respx.post(_API_URL).mock(
         return_value=httpx.Response(200, json=monday_change_columns_response)
     )
     cols = {"status": {"label": "Done"}}
@@ -303,7 +307,7 @@ async def test_create_update_sends_correct_body(
     monday_create_update_response: dict[str, Any],
 ) -> None:
     """create_update() sends the correct item ID and body."""
-    route = respx.post(MONDAY_API_URL).mock(
+    route = respx.post(_API_URL).mock(
         return_value=httpx.Response(200, json=monday_create_update_response)
     )
     result = await client.create_update(item_id=111, body="Test comment")
@@ -322,7 +326,7 @@ async def test_create_subitem_with_column_values(
     monday_create_subitem_response: dict[str, Any],
 ) -> None:
     """create_subitem() sends column_values when provided."""
-    route = respx.post(MONDAY_API_URL).mock(
+    route = respx.post(_API_URL).mock(
         return_value=httpx.Response(200, json=monday_create_subitem_response)
     )
     cols = {"status": {"label": "To Do"}}
@@ -347,7 +351,7 @@ async def test_create_subitem_without_column_values(
     monday_create_subitem_response: dict[str, Any],
 ) -> None:
     """create_subitem() omits columnValues when not provided."""
-    route = respx.post(MONDAY_API_URL).mock(
+    route = respx.post(_API_URL).mock(
         return_value=httpx.Response(200, json=monday_create_subitem_response)
     )
     await client.create_subitem(parent_item_id=111, item_name="Simple subtask")
@@ -364,7 +368,7 @@ async def test_move_item_to_group_sends_correct_variables(
     monday_move_item_response: dict[str, Any],
 ) -> None:
     """move_item_to_group() sends the correct item ID and group ID."""
-    route = respx.post(MONDAY_API_URL).mock(
+    route = respx.post(_API_URL).mock(
         return_value=httpx.Response(200, json=monday_move_item_response)
     )
     result = await client.move_item_to_group(item_id=111, group_id="group_3")

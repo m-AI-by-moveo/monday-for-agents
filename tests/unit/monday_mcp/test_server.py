@@ -34,7 +34,7 @@ def _get_tool(name: str) -> Any:
 
 @pytest.mark.unit
 def test_all_tools_are_registered() -> None:
-    """The MCP server registers exactly 9 tools."""
+    """The MCP server registers exactly 10 tools."""
     tool_names = _get_tool_names()
     expected = {
         "create_task",
@@ -46,6 +46,7 @@ def test_all_tools_are_registered() -> None:
         "add_task_comment",
         "create_subtask",
         "move_task_to_group",
+        "list_users",
     }
     assert tool_names == expected
 

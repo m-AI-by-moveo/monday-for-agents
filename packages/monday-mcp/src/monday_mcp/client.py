@@ -80,7 +80,7 @@ class MondayClient:
         body = response.json()
 
         # Track complexity if returned.
-        complexity = body.get("complexity") or body.get("data", {}).get("complexity")
+        complexity = body.get("complexity") or (body.get("data") or {}).get("complexity")
         if complexity and isinstance(complexity, dict):
             self._record_complexity(complexity.get("after", 0))
 

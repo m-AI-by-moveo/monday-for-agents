@@ -156,17 +156,23 @@ class TestCreateA2AApp:
         assert card.name == "Card Test Agent"
 
     @patch("a2a_server.server.A2AStarletteApplication")
+    @patch("a2a_server.server.DefaultRequestHandler")
     def test_passes_executor_to_application(
-        self, mock_app_cls: MagicMock
+        self, mock_handler_cls: MagicMock, mock_app_cls: MagicMock
     ) -> None:
-        """create_a2a_app() passes the executor to the app constructor."""
+        """create_a2a_app() passes the executor through a DefaultRequestHandler."""
         agent_def = _make_agent_def()
         mock_executor = MagicMock(name="MyExecutor")
 
         create_a2a_app(agent_def, mock_executor)
 
-        call_kwargs = mock_app_cls.call_args[1]
-        assert call_kwargs["agent_executor"] is mock_executor
+        # Executor is passed to the request handler
+        handler_kwargs = mock_handler_cls.call_args[1]
+        assert handler_kwargs["agent_executor"] is mock_executor
+
+        # The handler is passed to the app
+        app_kwargs = mock_app_cls.call_args[1]
+        assert app_kwargs["http_handler"] is mock_handler_cls.return_value
 
     @patch("a2a_server.server.A2AStarletteApplication")
     def test_card_has_skills_from_definition(
