@@ -39,12 +39,23 @@ export function standupBlocks(
 
 export function staleTaskBlocks(
   text: string,
+  boardId?: string,
 ): { blocks: (KnownBlock | Block)[]; text: string } {
+  const boardUrl = boardId
+    ? `https://moveogroup.monday.com/boards/${boardId}`
+    : "";
+
   const blocks: (KnownBlock | Block)[] = [
     {
       type: "header",
       text: { type: "plain_text", text: ":warning: Stale Tasks Detected", emoji: true },
     },
+    ...(boardUrl
+      ? [{
+          type: "section" as const,
+          text: { type: "mrkdwn" as const, text: `<${boardUrl}|View Board>` },
+        }]
+      : []),
     {
       type: "section",
       text: { type: "mrkdwn", text },

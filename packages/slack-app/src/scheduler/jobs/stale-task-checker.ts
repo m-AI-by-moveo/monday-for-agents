@@ -68,7 +68,8 @@ async function execute(ctx: ScheduledJobContext): Promise<ScheduledJobResult> {
     };
   }
 
-  const { blocks, text: fallback } = staleTaskBlocks(text);
+  const boardId = process.env.MONDAY_BOARD_ID || "";
+  const { blocks, text: fallback } = staleTaskBlocks(text, boardId);
 
   await ctx.slackClient.chat.postMessage({
     channel: ctx.channelId,
