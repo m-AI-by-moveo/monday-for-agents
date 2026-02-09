@@ -2,6 +2,7 @@
   "name": "mfa-slack-app",
   "version": "0.1.0",
   "description": "Slack gateway for Monday-for-Agents — routes messages to A2A agents",
+  "type": "module",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",

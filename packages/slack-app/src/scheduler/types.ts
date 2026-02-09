@@ -1,4 +1,4 @@
-import type { KnownBlock, Block } from "@slack/bolt";
+import type { KnownBlock, Block } from "@slack/types";
 
 // ---------------------------------------------------------------------------
 // Scheduler types

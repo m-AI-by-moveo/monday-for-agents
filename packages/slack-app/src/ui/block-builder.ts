@@ -5,7 +5,7 @@
  * can pass `{ blocks, text }` to `say()` / `respond()`.
  */
 
-import type { KnownBlock, Block } from "@slack/bolt";
+import type { KnownBlock, Block } from "@slack/types";
 
 // ---------------------------------------------------------------------------
 // Markdown → Slack mrkdwn conversion
