@@ -7,10 +7,12 @@ import {
 import {
   agentListBlocks,
   statusDashboardBlocks,
+  schedulerStatusBlocks,
   loadingBlocks,
   errorBlocks,
   warningBlocks,
 } from "../ui/block-builder.js";
+import type { SchedulerService } from "../services/scheduler.js";
 
 const a2a = createA2AClient();
 
@@ -49,7 +51,7 @@ async function fetchBoardStatus(): Promise<{ blocks: any[]; text: string }> {
 // Registration
 // ---------------------------------------------------------------------------
 
-export function registerCommands(app: App): void {
+export function registerCommands(app: App, scheduler?: SchedulerService | null): void {
   app.command("/agents", async ({ ack, respond }) => {
     await ack();
     console.log("[commands] /agents invoked");
@@ -74,5 +76,22 @@ export function registerCommands(app: App): void {
       blocks: result.blocks,
       text: result.text,
     });
+  });
+
+  app.command("/scheduler", async ({ ack, respond }) => {
+    await ack();
+    console.log("[commands] /scheduler invoked");
+
+    if (!scheduler) {
+      await respond({
+        response_type: "ephemeral",
+        text: "Scheduler is disabled.",
+      });
+      return;
+    }
+
+    const jobs = scheduler.getStatus();
+    const { blocks, text } = schedulerStatusBlocks(jobs);
+    await respond({ response_type: "ephemeral", blocks, text });
   });
 }

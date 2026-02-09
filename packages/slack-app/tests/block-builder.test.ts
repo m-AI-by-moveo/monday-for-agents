@@ -7,7 +7,9 @@ import {
   statusDashboardBlocks,
   loadingBlocks,
   noResponseBlocks,
+  schedulerStatusBlocks,
 } from "../src/ui/block-builder.js";
+import type { JobStatus } from "../src/scheduler/types.js";
 
 describe("block-builder", () => {
   // -------------------------------------------------------------------------
@@ -141,6 +143,84 @@ describe("block-builder", () => {
       const { blocks, text } = noResponseBlocks();
       expect(text).toBe("_No response from agent._");
       expect(blocks).toHaveLength(1);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // schedulerStatusBlocks
+  // -------------------------------------------------------------------------
+
+  describe("schedulerStatusBlocks", () => {
+    const baseJob: JobStatus = {
+      id: "daily-standup",
+      name: "Daily Standup",
+      enabled: true,
+      cron: "0 9 * * 1-5",
+      running: false,
+      lastRun: null,
+      lastResult: null,
+      consecutiveFailures: 0,
+    };
+
+    it("renders header and a section per job", () => {
+      const jobs: JobStatus[] = [
+        baseJob,
+        { ...baseJob, id: "stale-tasks", name: "Stale Task Checker", enabled: false },
+      ];
+      const { blocks, text } = schedulerStatusBlocks(jobs);
+
+      // Header + 2 job sections
+      expect(blocks).toHaveLength(3);
+      expect(blocks[0]).toMatchObject({
+        type: "header",
+        text: { type: "plain_text" },
+      });
+      expect(blocks[1]).toMatchObject({ type: "section" });
+      expect(blocks[2]).toMatchObject({ type: "section" });
+
+      // Fallback text includes job names
+      expect(text).toContain("Daily Standup");
+      expect(text).toContain("Stale Task Checker");
+    });
+
+    it("shows 'Never' when lastRun is null", () => {
+      const { blocks } = schedulerStatusBlocks([baseJob]);
+      const sectionText = (blocks[1] as any).text.text as string;
+      expect(sectionText).toContain("Last run: Never");
+    });
+
+    it("shows relative time when lastRun is set", () => {
+      const recentJob: JobStatus = {
+        ...baseJob,
+        lastRun: new Date(Date.now() - 120_000), // 2 minutes ago
+      };
+      const { blocks } = schedulerStatusBlocks([recentJob]);
+      const sectionText = (blocks[1] as any).text.text as string;
+      expect(sectionText).toContain("2m ago");
+    });
+
+    it("shows failure count when consecutiveFailures > 0", () => {
+      const failingJob: JobStatus = {
+        ...baseJob,
+        consecutiveFailures: 3,
+        lastResult: { success: false, posted: false, error: "timeout" },
+        lastRun: new Date(),
+      };
+      const { blocks } = schedulerStatusBlocks([failingJob]);
+      const sectionText = (blocks[1] as any).text.text as string;
+      expect(sectionText).toContain("Consecutive failures: 3");
+      expect(sectionText).toContain("Failed");
+      expect(sectionText).toContain("timeout");
+    });
+
+    it("shows enabled/disabled status", () => {
+      const disabledJob: JobStatus = { ...baseJob, enabled: false };
+      const { blocks } = schedulerStatusBlocks([baseJob, disabledJob]);
+
+      const enabledText = (blocks[1] as any).text.text as string;
+      const disabledText = (blocks[2] as any).text.text as string;
+      expect(enabledText).toContain("Enabled");
+      expect(disabledText).toContain("Disabled");
     });
   });
 });

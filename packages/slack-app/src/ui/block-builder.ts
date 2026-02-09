@@ -6,6 +6,7 @@
  */
 
 import type { KnownBlock, Block } from "@slack/types";
+import type { JobStatus } from "../scheduler/types.js";
 
 // ---------------------------------------------------------------------------
 // Markdown → Slack mrkdwn conversion
@@ -176,4 +177,58 @@ export function noResponseBlocks(): { blocks: (KnownBlock | Block)[]; text: stri
     },
   ];
   return { blocks, text };
+}
+
+// ---------------------------------------------------------------------------
+// Scheduler status (/scheduler command)
+// ---------------------------------------------------------------------------
+
+function relativeTime(date: Date): string {
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+export function schedulerStatusBlocks(
+  jobs: JobStatus[],
+): { blocks: (KnownBlock | Block)[]; text: string } {
+  const blocks: (KnownBlock | Block)[] = [
+    {
+      type: "header",
+      text: { type: "plain_text", text: ":gear: Scheduler Status", emoji: true },
+    },
+  ];
+
+  for (const job of jobs) {
+    const status = job.enabled ? ":white_check_mark: Enabled" : ":no_entry_sign: Disabled";
+    const running = job.running ? " :runner: Running now" : "";
+    const lastRun = job.lastRun ? relativeTime(job.lastRun) : "Never";
+
+    let resultLine = "";
+    if (job.lastResult) {
+      resultLine = job.lastResult.success
+        ? "\nLast result: :white_check_mark: Success"
+        : `\nLast result: :x: Failed — ${job.lastResult.error ?? "unknown error"}`;
+    }
+
+    const failureLine =
+      job.consecutiveFailures > 0
+        ? `\n:warning: Consecutive failures: ${job.consecutiveFailures}`
+        : "";
+
+    const text = `*${job.name}*\n${status}${running}\nCron: \`${job.cron}\`\nLast run: ${lastRun}${resultLine}${failureLine}`;
+
+    blocks.push({
+      type: "section",
+      text: { type: "mrkdwn", text },
+    });
+  }
+
+  const fallback = `Scheduler Status: ${jobs.map((j) => `${j.name} (${j.enabled ? "enabled" : "disabled"})`).join(", ")}`;
+  return { blocks, text: fallback };
 }

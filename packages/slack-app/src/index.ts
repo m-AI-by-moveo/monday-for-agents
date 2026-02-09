@@ -88,7 +88,6 @@ const app = new App({
 
 registerMentionHandler(app);
 registerThreadHandler(app);
-registerCommands(app);
 
 // ---------------------------------------------------------------------------
 // Agent notification webhook route (needs `app.client` for posting)
@@ -137,7 +136,7 @@ receiver.router.post("/api/agent-notify", async (req: Request, res: Response) =>
   console.log("[slack-app] Handlers registered: mention, thread, commands, agent-notify");
 
   // -------------------------------------------------------------------------
-  // Scheduled automations
+  // Scheduled automations & /scheduler command
   // -------------------------------------------------------------------------
 
   const schedulerConfig = loadSchedulerConfig();
@@ -170,6 +169,8 @@ receiver.router.post("/api/agent-notify", async (req: Request, res: Response) =>
 
     scheduler.startAll(schedulerConfig.timezone);
 
+    registerCommands(app, scheduler);
+
     const gracefulShutdown = () => {
       console.log("[slack-app] Shutting down scheduler...");
       scheduler.stopAll();
@@ -179,6 +180,7 @@ receiver.router.post("/api/agent-notify", async (req: Request, res: Response) =>
     process.on("SIGTERM", gracefulShutdown);
     process.on("SIGINT", gracefulShutdown);
   } else {
+    registerCommands(app, null);
     console.log("[slack-app] Scheduler disabled (SCHEDULER_ENABLED=false or SLACK_CHANNEL_ID empty)");
   }
 })();

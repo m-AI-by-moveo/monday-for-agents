@@ -53,6 +53,10 @@ vi.mock("../src/ui/block-builder.js", () => ({
     blocks: [{ type: "section", text: { text: `:warning: ${msg}` } }],
     text: `:warning: ${msg}`,
   }),
+  schedulerStatusBlocks: (jobs: any[]) => ({
+    blocks: [{ type: "header" }, ...jobs.map((j: any) => ({ type: "section", job: j.name }))],
+    text: `Scheduler Status: ${jobs.map((j: any) => j.name).join(", ")}`,
+  }),
 }));
 
 import { registerCommands } from "../src/handlers/commands.js";
@@ -61,7 +65,7 @@ import { registerCommands } from "../src/handlers/commands.js";
 // Helpers
 // ---------------------------------------------------------------------------
 
-function createMockApp() {
+function createMockApp(scheduler?: any) {
   const commandCallbacks = new Map<string, (args: Record<string, unknown>) => Promise<void>>();
 
   const app = {
@@ -70,7 +74,7 @@ function createMockApp() {
     }),
   };
 
-  registerCommands(app as any);
+  registerCommands(app as any, scheduler);
 
   return {
     app,
@@ -268,13 +272,89 @@ describe("commands handler", () => {
   });
 
   // -------------------------------------------------------------------------
+  // /scheduler
+  // -------------------------------------------------------------------------
+
+  describe("/scheduler", () => {
+    it("acks immediately", async () => {
+      const mockScheduler = {
+        getStatus: vi.fn().mockReturnValue([]),
+      };
+      const m = createMockApp(mockScheduler);
+      const ack = makeAck();
+      const respond = makeRespond();
+
+      await m.fireCommand("/scheduler", { ack, respond });
+
+      expect(ack).toHaveBeenCalledTimes(1);
+    });
+
+    it("returns scheduler status blocks when scheduler is available", async () => {
+      const sampleJobs = [
+        {
+          id: "daily-standup",
+          name: "Daily Standup",
+          enabled: true,
+          cron: "0 9 * * 1-5",
+          running: false,
+          lastRun: new Date(),
+          lastResult: { success: true, posted: true },
+          consecutiveFailures: 0,
+        },
+        {
+          id: "stale-tasks",
+          name: "Stale Task Checker",
+          enabled: false,
+          cron: "0 14 * * 1-5",
+          running: false,
+          lastRun: null,
+          lastResult: null,
+          consecutiveFailures: 0,
+        },
+      ];
+      const mockScheduler = {
+        getStatus: vi.fn().mockReturnValue(sampleJobs),
+      };
+      const m = createMockApp(mockScheduler);
+      const ack = makeAck();
+      const respond = makeRespond();
+
+      await m.fireCommand("/scheduler", { ack, respond });
+
+      expect(mockScheduler.getStatus).toHaveBeenCalledTimes(1);
+      expect(respond).toHaveBeenCalledTimes(1);
+
+      const call = respond.mock.calls[0][0] as { response_type: string; text: string; blocks: any[] };
+      expect(call.response_type).toBe("ephemeral");
+      expect(call.blocks).toBeDefined();
+      expect(call.text).toContain("Daily Standup");
+      expect(call.text).toContain("Stale Task Checker");
+    });
+
+    it("returns disabled message when scheduler is null", async () => {
+      const m = createMockApp(null);
+      const ack = makeAck();
+      const respond = makeRespond();
+
+      await m.fireCommand("/scheduler", { ack, respond });
+
+      expect(respond).toHaveBeenCalledTimes(1);
+
+      const call = respond.mock.calls[0][0] as { response_type: string; text: string };
+      expect(call.response_type).toBe("ephemeral");
+      expect(call.text).toContain("Scheduler is disabled");
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Registration
   // -------------------------------------------------------------------------
 
   describe("registration", () => {
-    it("registers both /agents and /status commands", () => {
+    it("registers /agents, /status, and /scheduler commands", () => {
       expect(mock.app.command).toHaveBeenCalledWith("/agents", expect.any(Function));
       expect(mock.app.command).toHaveBeenCalledWith("/status", expect.any(Function));
+      expect(mock.app.command).toHaveBeenCalledWith("/scheduler", expect.any(Function));
     });
   });
 });
