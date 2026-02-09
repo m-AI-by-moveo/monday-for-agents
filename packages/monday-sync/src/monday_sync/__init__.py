@@ -1,1 +1,1 @@
-"""Sync agent YAML definitions to Monday.com registry board."""
+"""monday-sync — Agent operations toolkit for Monday.com."""

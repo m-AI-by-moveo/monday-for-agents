@@ -1,17 +1,21 @@
 [project]
 name = "mfa-monday-sync"
 version = "0.1.0"
-description = "Sync agent YAML definitions to Monday.com registry board"
+description = "Agent operations toolkit — sync, validate, health-check, and watch agent definitions"
 requires-python = ">=3.11"
 dependencies = [
     "httpx>=0.27.0",
     "pyyaml>=6.0",
     "pydantic>=2.0",
     "click>=8.0",
+    "mfa-a2a-server",
+    "rich>=13.0",
+    "watchfiles>=0.21",
+    "python-dotenv>=1.0",
 ]
 
 [project.scripts]
-monday-sync = "monday_sync.sync:cli"
+monday-sync = "monday_sync.cli:cli"
 
 [build-system]
 requires = ["hatchling"]
