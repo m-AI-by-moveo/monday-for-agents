@@ -5,7 +5,8 @@ import { fileURLToPath } from "url";
 // Load .env from repo root (two levels up from packages/slack-app/)
 const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, "../../../.env") });
-import { App, ExpressReceiver } from "@slack/bolt";
+import bolt from "@slack/bolt";
+const { App, ExpressReceiver } = bolt;
 import type { Request, Response } from "express";
 import { registerMentionHandler } from "./handlers/mention.js";
 import { registerThreadHandler } from "./handlers/thread.js";
