@@ -10,6 +10,12 @@ import type { Request, Response } from "express";
 import { registerMentionHandler } from "./handlers/mention.js";
 import { registerThreadHandler } from "./handlers/thread.js";
 import { registerCommands } from "./handlers/commands.js";
+import { loadSchedulerConfig } from "./scheduler/config.js";
+import { createSchedulerService } from "./services/scheduler.js";
+import { AGENT_URLS } from "./services/a2a-client.js";
+import { createDailyStandupJob } from "./scheduler/jobs/daily-standup.js";
+import { createStaleTaskCheckerJob } from "./scheduler/jobs/stale-task-checker.js";
+import { createWeeklySummaryJob } from "./scheduler/jobs/weekly-summary.js";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -128,4 +134,50 @@ receiver.router.post("/api/agent-notify", async (req: Request, res: Response) =>
     console.log(`[slack-app] Running on http://localhost:${PORT}`);
   }
   console.log("[slack-app] Handlers registered: mention, thread, commands, agent-notify");
+
+  // -------------------------------------------------------------------------
+  // Scheduled automations
+  // -------------------------------------------------------------------------
+
+  const schedulerConfig = loadSchedulerConfig();
+
+  if (schedulerConfig.enabled) {
+    const scheduler = createSchedulerService({
+      slackClient: app.client,
+      channelId: schedulerConfig.channelId,
+      scrumMasterUrl: AGENT_URLS["scrum-master"],
+    });
+
+    scheduler.register(
+      createDailyStandupJob(
+        schedulerConfig.standup.enabled,
+        schedulerConfig.standup.cron,
+      ),
+    );
+    scheduler.register(
+      createStaleTaskCheckerJob(
+        schedulerConfig.staleCheck.enabled,
+        schedulerConfig.staleCheck.cron,
+      ),
+    );
+    scheduler.register(
+      createWeeklySummaryJob(
+        schedulerConfig.weekly.enabled,
+        schedulerConfig.weekly.cron,
+      ),
+    );
+
+    scheduler.startAll(schedulerConfig.timezone);
+
+    const gracefulShutdown = () => {
+      console.log("[slack-app] Shutting down scheduler...");
+      scheduler.stopAll();
+      process.exit(0);
+    };
+
+    process.on("SIGTERM", gracefulShutdown);
+    process.on("SIGINT", gracefulShutdown);
+  } else {
+    console.log("[slack-app] Scheduler disabled (SCHEDULER_ENABLED=false or SLACK_CHANNEL_ID empty)");
+  }
 })();

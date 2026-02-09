@@ -107,7 +107,7 @@ export function createA2AClient(): A2AClient {
       }
       const res = await axios.post<A2AResponse>(agentUrl, body, {
         headers,
-        timeout: 120_000, // 2 min – agents may take a while
+        timeout: 300_000, // 5 min – PO agent creates PRD + multiple tasks
       });
       const data = res.data;
 

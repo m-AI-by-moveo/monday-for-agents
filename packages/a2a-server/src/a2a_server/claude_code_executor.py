@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shutil
 import tempfile
 import uuid
@@ -137,8 +138,9 @@ class ClaudeCodeExecutor(AgentExecutor):
 
             # Prepend board link if the agent didn't include one
             board_id = self.agent_def.monday.board_id if self.agent_def.monday else ""
+            monday_domain = os.environ.get("MONDAY_DOMAIN", "monday.com")
             if board_id and "monday.com/boards/" not in result_text:
-                board_link = f"https://monday.com/boards/{board_id}"
+                board_link = f"https://{monday_domain}/boards/{board_id}"
                 result_text = f"{board_link}\n\n{result_text}"
 
             logger.info(
