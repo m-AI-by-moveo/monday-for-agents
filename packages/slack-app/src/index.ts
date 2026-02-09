@@ -11,12 +11,17 @@ import type { Request, Response } from "express";
 import { registerMentionHandler } from "./handlers/mention.js";
 import { registerThreadHandler } from "./handlers/thread.js";
 import { registerCommands } from "./handlers/commands.js";
+import type { GoogleServices } from "./handlers/commands.js";
 import { loadSchedulerConfig } from "./scheduler/config.js";
 import { createSchedulerService } from "./services/scheduler.js";
 import { AGENT_URLS } from "./services/a2a-client.js";
 import { createDailyStandupJob } from "./scheduler/jobs/daily-standup.js";
 import { createStaleTaskCheckerJob } from "./scheduler/jobs/stale-task-checker.js";
 import { createWeeklySummaryJob } from "./scheduler/jobs/weekly-summary.js";
+import { GoogleTokenStore } from "./services/google-token-store.js";
+import { GoogleAuthService } from "./services/google-auth.js";
+import { GoogleCalendarService } from "./services/google-calendar.js";
+import { GoogleDriveService } from "./services/google-drive.js";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -122,12 +127,55 @@ receiver.router.post("/api/agent-notify", async (req: Request, res: Response) =>
 });
 
 // ---------------------------------------------------------------------------
+// Google OAuth2 integration (optional — enabled when GOOGLE_CLIENT_ID is set)
+// ---------------------------------------------------------------------------
+
+let googleServices: GoogleServices | null = null;
+
+if (process.env.GOOGLE_CLIENT_ID) {
+  const tokenStore = new GoogleTokenStore();
+  const googleAuth = new GoogleAuthService(tokenStore);
+  const googleCalendar = new GoogleCalendarService(googleAuth);
+  const googleDrive = new GoogleDriveService(googleAuth);
+  googleServices = { auth: googleAuth, calendar: googleCalendar, drive: googleDrive };
+
+  receiver.router.get("/api/google/callback", async (req: Request, res: Response) => {
+    try {
+      const code = req.query.code as string;
+      const state = req.query.state as string;
+
+      if (!code || !state) {
+        res.status(400).send("Missing code or state parameter.");
+        return;
+      }
+
+      const slackUserId = await googleAuth.handleCallback(code, state);
+      res.send(
+        `<html><body><h2>Google account connected!</h2><p>You can close this tab and return to Slack. (User: ${slackUserId})</p></body></html>`,
+      );
+    } catch (err) {
+      console.error("[google-callback] Error:", err);
+      res.status(400).send("OAuth callback failed. Please try /google connect again.");
+    }
+  });
+
+  console.log("[slack-app] Google integration enabled");
+} else {
+  console.log("[slack-app] Google integration disabled (GOOGLE_CLIENT_ID not set)");
+}
+
+// ---------------------------------------------------------------------------
 // Start
 // ---------------------------------------------------------------------------
 
 (async () => {
   if (useSocketMode) {
     await app.start();
+    // In Socket Mode, Bolt uses WebSockets — start Express separately for HTTP routes
+    // (OAuth callback, agent-notify webhook, etc.)
+    receiver.app.listen(PORT, () => {
+      console.log(`[slack-app] HTTP routes on http://localhost:${PORT}`);
+    });
     console.log(`[slack-app] Running in Socket Mode`);
   } else {
     await app.start(PORT);
@@ -169,7 +217,7 @@ receiver.router.post("/api/agent-notify", async (req: Request, res: Response) =>
 
     scheduler.startAll(schedulerConfig.timezone);
 
-    registerCommands(app, scheduler);
+    registerCommands(app, scheduler, googleServices);
 
     const gracefulShutdown = () => {
       console.log("[slack-app] Shutting down scheduler...");
@@ -180,7 +228,7 @@ receiver.router.post("/api/agent-notify", async (req: Request, res: Response) =>
     process.on("SIGTERM", gracefulShutdown);
     process.on("SIGINT", gracefulShutdown);
   } else {
-    registerCommands(app, null);
+    registerCommands(app, null, googleServices);
     console.log("[slack-app] Scheduler disabled (SCHEDULER_ENABLED=false or SLACK_CHANNEL_ID empty)");
   }
 })();

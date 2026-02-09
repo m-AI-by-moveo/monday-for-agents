@@ -9,13 +9,19 @@ RUN pip install uv
 COPY pyproject.toml ./
 COPY packages/a2a-server/pyproject.toml packages/a2a-server/
 COPY packages/monday-mcp/pyproject.toml packages/monday-mcp/
+COPY packages/google-calendar-mcp/pyproject.toml packages/google-calendar-mcp/
+COPY packages/google-drive-mcp/pyproject.toml packages/google-drive-mcp/
 
 # Copy source code
 COPY packages/a2a-server/src packages/a2a-server/src/
 COPY packages/monday-mcp/src packages/monday-mcp/src/
+COPY packages/google-calendar-mcp/src packages/google-calendar-mcp/src/
+COPY packages/google-drive-mcp/src packages/google-drive-mcp/src/
 
 # Install dependencies
 RUN cd packages/monday-mcp && uv pip install --system -e . && \
+    cd /app/packages/google-calendar-mcp && uv pip install --system -e . && \
+    cd /app/packages/google-drive-mcp && uv pip install --system -e . && \
     cd /app/packages/a2a-server && uv pip install --system -e .
 
 # Agent YAML configs are mounted as a volume

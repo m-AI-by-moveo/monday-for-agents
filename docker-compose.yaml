@@ -75,6 +75,7 @@ services:
       - ANTHROPIC_API_KEY
       - MFA_API_KEY
       - SLACK_CHANNEL_ID
+      - GOOGLE_SERVICE_ACCOUNT_KEY_FILE
       - PO_AGENT_PORT=${PO_AGENT_PORT:-10001}
       - DEV_AGENT_PORT=${DEV_AGENT_PORT:-10002}
       - REVIEWER_AGENT_PORT=${REVIEWER_AGENT_PORT:-10003}
@@ -93,13 +94,22 @@ services:
       - SLACK_APP_TOKEN
       - SLACK_CHANNEL_ID
       - MFA_API_KEY
+      - GOOGLE_CLIENT_ID
+      - GOOGLE_CLIENT_SECRET
+      - GOOGLE_REDIRECT_URI
+      - GOOGLE_TOKEN_DB_PATH=/app/data/google-tokens.sqlite
       - PO_AGENT_PORT=${PO_AGENT_PORT:-10001}
       - DEV_AGENT_PORT=${DEV_AGENT_PORT:-10002}
       - REVIEWER_AGENT_PORT=${REVIEWER_AGENT_PORT:-10003}
       - SM_AGENT_PORT=${SM_AGENT_PORT:-10004}
     ports:
       - "3000:3000"
+    volumes:
+      - slack-app-data:/app/data
     depends_on:
       - product-owner
       - scrum-master
     restart: unless-stopped
+
+volumes:
+  slack-app-data:

@@ -7,6 +7,8 @@ dependencies = [
     "mfa-a2a-server",
     "mfa-monday-mcp",
     "mfa-monday-sync",
+    "mfa-google-calendar-mcp",
+    "mfa-google-drive-mcp",
 ]
 
 [project.optional-dependencies]
@@ -27,12 +29,16 @@ test = [
 mfa-a2a-server = { workspace = true }
 mfa-monday-mcp = { workspace = true }
 mfa-monday-sync = { workspace = true }
+mfa-google-calendar-mcp = { workspace = true }
+mfa-google-drive-mcp = { workspace = true }
 
 [tool.uv.workspace]
 members = [
     "packages/a2a-server",
     "packages/monday-mcp",
     "packages/monday-sync",
+    "packages/google-calendar-mcp",
+    "packages/google-drive-mcp",
 ]
 
 [tool.pytest.ini_options]
@@ -55,6 +61,8 @@ source = [
     "packages/monday-mcp/src",
     "packages/a2a-server/src",
     "packages/monday-sync/src",
+    "packages/google-calendar-mcp/src",
+    "packages/google-drive-mcp/src",
 ]
 omit = ["*/tests/*", "*/__pycache__/*"]
 

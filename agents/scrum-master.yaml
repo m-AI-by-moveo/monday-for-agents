@@ -31,10 +31,12 @@ tools:
   mcp_servers:
     - name: monday
       source: builtin:monday-mcp
+    - name: google-calendar
+      source: builtin:google-calendar-mcp
 
 claude_code:
   timeout: 300
-  allowed_tools: ["mcp__monday__*", "mcp__a2a-bridge__*"]
+  allowed_tools: ["mcp__monday__*", "mcp__a2a-bridge__*", "mcp__google-calendar__*"]
 
 monday:
   board_id: "${MONDAY_BOARD_ID}"

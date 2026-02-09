@@ -28,6 +28,11 @@ packages/slack-app/dist/
 .DS_Store
 Thumbs.db
 
+# Data / SQLite
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
 # Test / Coverage
 htmlcov/
 .coverage

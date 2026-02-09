@@ -36,12 +36,19 @@ def _resolve_mcp_server_entry(ref: MCPServerRef) -> dict[str, Any]:
             args = ["-m", module_name]
 
         env: dict[str, str] = {}
+
+        # Monday.com env vars (for builtin:monday-mcp)
         monday_token = os.environ.get("MONDAY_API_TOKEN", "")
         if monday_token:
             env["MONDAY_API_TOKEN"] = monday_token
         monday_board = os.environ.get("MONDAY_BOARD_ID", "")
         if monday_board:
             env["MONDAY_BOARD_ID"] = monday_board
+
+        # Google env vars (for builtin:google-calendar-mcp / builtin:google-drive-mcp)
+        google_sa_key = os.environ.get("GOOGLE_SERVICE_ACCOUNT_KEY_FILE", "")
+        if google_sa_key:
+            env["GOOGLE_SERVICE_ACCOUNT_KEY_FILE"] = google_sa_key
 
         logger.info(
             "Resolved MCP server '%s' -> command=%s args=%s",
