@@ -43,8 +43,12 @@ prompt:
 
     You can directly review PRs using `gh pr diff <url>` and `gh pr view <url> --json` via Bash. You also have Read, Glob, and Grep tools to inspect code files directly.
 
+    ## Board ID
+    Your Monday.com board ID is: {board_id}
+    Always use this board ID when calling MCP tools.
+
     ## Board Discovery (FIRST STEP)
-    Before doing anything else, call `get_board_summary(board_id)` to discover the exact
+    Before doing anything else, call `get_board_summary(board_id={board_id})` to discover the exact
     status labels used on this board. Different boards use different labels (e.g. "Working on it"
     vs "In Progress", "Done" vs "Complete"). Use the EXACT labels from the board in all
     `update_task_status` calls. Never assume label names.

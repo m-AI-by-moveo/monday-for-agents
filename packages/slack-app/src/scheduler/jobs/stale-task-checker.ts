@@ -7,10 +7,22 @@ import type { ScheduledJobContext, ScheduledJobDefinition, ScheduledJobResult } 
 // ---------------------------------------------------------------------------
 
 const STALE_CHECK_PROMPT =
-  "Check for stuck or stale tasks on the board. If there are tasks that have been in the same status too long based on the thresholds, list them with details. If there are NO stale tasks, respond with exactly: NO_STALE_TASKS";
+  "Check for stuck or stale tasks on the board. Use the board ID from your system prompt. If there are tasks that have been in the same status too long based on the thresholds, list them with details. If there are NO stale tasks, respond with exactly: NO_STALE_TASKS";
 
 /** Sentinel value the scrum-master returns when nothing is stale */
 const NO_STALE_SENTINEL = "NO_STALE_TASKS";
+
+/** Patterns that indicate the agent failed to access the board */
+const SUPPRESSED_PATTERNS = [
+  "provide the board id",
+  "provide the correct",
+  "need a valid board",
+  "need the board id",
+  "could you please provide",
+  "i need a",
+  "i don't have access",
+  "unable to locate",
+];
 
 async function execute(ctx: ScheduledJobContext): Promise<ScheduledJobResult> {
   const a2a = createA2AClient();
@@ -38,6 +50,17 @@ async function execute(ctx: ScheduledJobContext): Promise<ScheduledJobResult> {
   // Suppress posting when no stale tasks are found
   if (text.includes(NO_STALE_SENTINEL)) {
     return { success: true, posted: false };
+  }
+
+  // Suppress posting when the agent failed to access the board
+  const lower = text.toLowerCase();
+  if (SUPPRESSED_PATTERNS.some((p) => lower.includes(p))) {
+    console.warn("[stale-task-checker] Suppressed confused agent response:", text.slice(0, 200));
+    return {
+      success: false,
+      posted: false,
+      error: "Agent could not access the board — check MONDAY_BOARD_ID and agent config",
+    };
   }
 
   const { blocks, text: fallback } = staleTaskBlocks(text);
