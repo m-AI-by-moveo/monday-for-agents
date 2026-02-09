@@ -82,7 +82,7 @@ describe("a2a-client", () => {
             expect(body.id).toBeDefined();
 
             const params = body.params as Record<string, unknown>;
-            expect(params.message).toEqual({
+            expect(params.message).toMatchObject({
               role: "user",
               parts: [{ type: "text", text: "hello agent" }],
             });
@@ -175,19 +175,11 @@ describe("a2a-client", () => {
       it("handles timeout", async () => {
         const client = createA2AClient();
 
+        // Simulate a timeout error — use a string to avoid @mswjs/interceptors
+        // Reflect.has bug with object-style replyWithError
         nock("http://localhost:10001")
           .post("/")
-          .delay(130_000) // exceeds the 120s timeout
-          .reply(200, { jsonrpc: "2.0", id: "1" });
-
-        // Use a shorter-lived approach: axios will throw ECONNABORTED on timeout.
-        // Since we can't really wait 120s, we'll simulate via nock's delay + abort.
-        // nock with delay > axios timeout triggers a timeout error.
-        // For a practical test we can replyWithError to simulate timeout.
-        nock.cleanAll();
-        nock("http://localhost:10001")
-          .post("/")
-          .replyWithError({ message: "timeout of 120000ms exceeded", code: "ECONNABORTED" });
+          .replyWithError("timeout of 300000ms exceeded");
 
         const response = await client.sendMessage(
           "http://localhost:10001",

@@ -49,6 +49,10 @@ vi.mock("../src/ui/block-builder.js", () => ({
     blocks: [{ type: "section", text: { type: "mrkdwn", text: `:warning: ${msg}` } }],
     text: `:warning: ${msg}`,
   }),
+  loadingBlocks: (msg = "Processing your request...") => ({
+    blocks: [{ type: "section", text: { type: "mrkdwn", text: msg } }],
+    text: msg,
+  }),
   noResponseBlocks: () => ({
     blocks: [{ type: "section", text: { type: "mrkdwn", text: "_No response from agent._" } }],
     text: "_No response from agent._",
@@ -82,6 +86,18 @@ function createMockApp() {
 
 function makeSay() {
   return vi.fn().mockResolvedValue(undefined);
+}
+
+/** Mock Slack WebClient that satisfies resolveMentions() */
+function makeClient() {
+  return {
+    auth: {
+      test: vi.fn().mockResolvedValue({ user_id: "U12345" }),
+    },
+    users: {
+      list: vi.fn().mockResolvedValue({ members: [], response_metadata: {} }),
+    },
+  };
 }
 
 function makeEvent(overrides: Record<string, unknown> = {}) {
@@ -130,6 +146,7 @@ describe("mention handler", () => {
       await mock.fireMention({
         event: makeEvent({ text: "<@U12345> what is the status?" }),
         say,
+        client: makeClient(),
       });
 
       expect(mockSendMessage).toHaveBeenCalledWith(
@@ -154,6 +171,7 @@ describe("mention handler", () => {
       await mock.fireMention({
         event: makeEvent({ text: "<@U12345> run standup" }),
         say,
+        client: makeClient(),
       });
 
       expect(mockSendMessage).toHaveBeenCalledWith(
@@ -178,6 +196,7 @@ describe("mention handler", () => {
       await mock.fireMention({
         event: makeEvent({ text: "<@U12345> what is blocked?" }),
         say,
+        client: makeClient(),
       });
 
       expect(mockSendMessage).toHaveBeenCalledWith(
@@ -202,6 +221,7 @@ describe("mention handler", () => {
       await mock.fireMention({
         event: makeEvent({ text: "<@U12345> give me a summary" }),
         say,
+        client: makeClient(),
       });
 
       expect(mockSendMessage).toHaveBeenCalledWith(
@@ -226,6 +246,7 @@ describe("mention handler", () => {
       await mock.fireMention({
         event: makeEvent({ text: "<@U12345> create a new feature" }),
         say,
+        client: makeClient(),
       });
 
       expect(mockSendMessage).toHaveBeenCalledWith(
@@ -240,8 +261,8 @@ describe("mention handler", () => {
   // stripMention
   // -------------------------------------------------------------------------
 
-  describe("stripMention", () => {
-    it("removes <@U12345> patterns from message text", async () => {
+  describe("resolveMentions", () => {
+    it("removes bot mention from message text", async () => {
       const say = makeSay();
       mockSendMessage.mockResolvedValue({
         jsonrpc: "2.0",
@@ -254,8 +275,9 @@ describe("mention handler", () => {
       });
 
       await mock.fireMention({
-        event: makeEvent({ text: "<@UABC123> please help me" }),
+        event: makeEvent({ text: "<@U12345> please help me" }),
         say,
+        client: makeClient(),
       });
 
       expect(mockSendMessage).toHaveBeenCalledWith(
@@ -271,6 +293,7 @@ describe("mention handler", () => {
       await mock.fireMention({
         event: makeEvent({ text: "<@U12345>" }),
         say,
+        client: makeClient(),
       });
 
       expect(say).toHaveBeenCalledWith({
@@ -302,6 +325,7 @@ describe("mention handler", () => {
       await mock.fireMention({
         event: makeEvent({ ts, text: "<@U12345> hello" }),
         say,
+        client: makeClient(),
       });
 
       expect(threadMap.has(ts)).toBe(true);
@@ -332,6 +356,7 @@ describe("mention handler", () => {
           ts: "1700000002.000099",
         }),
         say,
+        client: makeClient(),
       });
 
       expect(mockSendMessage).toHaveBeenCalledWith(
@@ -359,6 +384,7 @@ describe("mention handler", () => {
       await mock.fireMention({
         event: makeEvent({ text: "<@U12345> do something" }),
         say,
+        client: makeClient(),
       });
 
       expect(say).toHaveBeenCalledWith(
@@ -377,6 +403,7 @@ describe("mention handler", () => {
       await mock.fireMention({
         event: makeEvent({ text: "<@U12345> do something" }),
         say,
+        client: makeClient(),
       });
 
       expect(say).toHaveBeenCalledWith(
@@ -415,6 +442,7 @@ describe("mention handler", () => {
       await mock.fireMention({
         event: makeEvent({ text: "<@U12345> give me info" }),
         say,
+        client: makeClient(),
       });
 
       expect(say).toHaveBeenCalledWith(
@@ -437,6 +465,7 @@ describe("mention handler", () => {
       await mock.fireMention({
         event: makeEvent({ text: "<@U12345> do something" }),
         say,
+        client: makeClient(),
       });
 
       expect(say).toHaveBeenCalledWith(
