@@ -25,6 +25,13 @@ import { GoogleDriveAgent } from "../services/google-drive-agent.js";
 import { MeetingSyncService } from "../services/meeting-sync.js";
 import { MeetingNotesAgent } from "../services/meeting-notes-agent.js";
 import type { MeetingStore } from "../services/meeting-store.js";
+import { TaskExtractorAgent } from "../services/task-extractor-agent.js";
+import { fetchBoards } from "../services/monday-client.js";
+import {
+  buildCreateTaskLoadingModal,
+  buildCreateTaskModal,
+  type CreateTaskModalMetadata,
+} from "../ui/create-task-modal-blocks.js";
 
 const a2a = createA2AClient();
 
@@ -264,6 +271,120 @@ export function registerCommands(
       console.error("[commands] /gdrive error:", err);
       const { blocks, text } = errorBlocks(err.message ?? "Drive operation failed.");
       await respond({ response_type: "ephemeral", blocks, text });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // /create-task — Create a Monday.com task from conversation context
+  // -------------------------------------------------------------------------
+
+  let taskExtractor: TaskExtractorAgent | null = null;
+
+  app.command("/create-task", async ({ ack, command, client }) => {
+    await ack();
+    console.log("[commands] /create-task invoked");
+
+    const channelId = command.channel_id;
+    const userId = command.user_id;
+    const triggerId = command.trigger_id;
+
+    const metadata: CreateTaskModalMetadata = { channelId, userId };
+
+    // Open loading modal immediately (trigger_id expires in 3s)
+    let viewId: string;
+    try {
+      const loadingView = buildCreateTaskLoadingModal(metadata);
+      const result = await client.views.open({
+        trigger_id: triggerId,
+        view: loadingView as any,
+      });
+      viewId = (result.view as any)?.id;
+      if (!viewId) {
+        console.error("[commands] /create-task: no view ID returned");
+        return;
+      }
+    } catch (err: any) {
+      console.error("[commands] /create-task: failed to open loading modal:", err.message);
+      return;
+    }
+
+    try {
+      // Fetch conversation history
+      let formattedMessages: { user: string; text: string }[] = [];
+      try {
+        const history = await client.conversations.history({
+          channel: channelId,
+          limit: 20,
+        });
+
+        const userMessages = (history.messages ?? [])
+          .filter((m) => !m.bot_id && m.text)
+          .reverse();
+
+        // Resolve user IDs to display names
+        const userIdSet = new Set(userMessages.map((m) => m.user).filter(Boolean));
+        const userNames = new Map<string, string>();
+        await Promise.all(
+          [...userIdSet].map(async (uid) => {
+            try {
+              const info = await client.users.info({ user: uid! });
+              userNames.set(uid!, info.user?.real_name || info.user?.name || uid!);
+            } catch {
+              userNames.set(uid!, uid!);
+            }
+          }),
+        );
+
+        formattedMessages = userMessages.map((m) => ({
+          user: userNames.get(m.user!) ?? m.user ?? "Unknown",
+          text: m.text!,
+        }));
+      } catch (err: any) {
+        console.warn("[commands] /create-task: could not fetch history:", err.message);
+        // Continue with empty messages — modal will show empty form
+      }
+
+      // Extract task details + fetch boards in parallel
+      if (!taskExtractor) taskExtractor = new TaskExtractorAgent();
+      const [extractedTask, boards] = await Promise.all([
+        taskExtractor.extractTaskFromMessages(formattedMessages),
+        fetchBoards().catch((err) => {
+          console.warn("[commands] /create-task: could not fetch boards:", err.message);
+          return [];
+        }),
+      ]);
+
+      // Update modal with full form
+      const fullView = buildCreateTaskModal(extractedTask, boards, metadata);
+      await client.views.update({
+        view_id: viewId,
+        view: fullView as any,
+      });
+    } catch (err: any) {
+      console.error("[commands] /create-task error:", err);
+      // Update modal with error message
+      try {
+        await client.views.update({
+          view_id: viewId,
+          view: {
+            type: "modal",
+            callback_id: "create_task_submit",
+            title: { type: "plain_text", text: "Create Task" },
+            close: { type: "plain_text", text: "Close" },
+            blocks: [
+              {
+                type: "section",
+                text: {
+                  type: "mrkdwn",
+                  text: `:x: Failed to extract task details: ${err.message ?? "Unknown error"}`,
+                },
+              },
+            ],
+          } as any,
+        });
+      } catch (updateErr: any) {
+        console.error("[commands] /create-task: failed to update modal with error:", updateErr.message);
+      }
     }
   });
 

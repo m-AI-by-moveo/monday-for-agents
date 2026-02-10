@@ -3,6 +3,7 @@ import type { GoogleAuthService } from "./google-auth.js";
 import type { MeetingStore } from "./meeting-store.js";
 import type { MeetingNotesAgent, MeetingAnalysis } from "./meeting-notes-agent.js";
 import { meetingPreviewBlocks } from "../scheduler/blocks/scheduler-blocks.js";
+import { fetchBoards, type MondayBoard } from "./monday-client.js";
 
 export interface MeetingSyncResult {
   meetingsFound: number;
@@ -69,6 +70,14 @@ export class MeetingSyncService {
 
       result.meetingsFound = meetEvents.length;
 
+      // Fetch Monday.com boards for LLM board suggestion (best-effort)
+      let boards: MondayBoard[] = [];
+      try {
+        boards = await fetchBoards();
+      } catch (err: any) {
+        console.warn("[meeting-sync] Could not fetch Monday boards:", err.message);
+      }
+
       for (const event of meetEvents) {
         const eventId = event.id ?? "";
         if (!eventId) continue;
@@ -92,6 +101,7 @@ export class MeetingSyncService {
           const analysis = await this.meetingNotesAgent.analyzeMeetingTranscript(
             transcript,
             meetingTitle,
+            boards,
           );
 
           this.meetingStore.markPending(eventId, meetingTitle);
@@ -111,6 +121,7 @@ export class MeetingSyncService {
               event_payload: {
                 event_id: eventId,
                 analysis: JSON.stringify(analysis),
+                suggested_board_id: analysis.suggestedBoardId ?? "",
               },
             },
           });

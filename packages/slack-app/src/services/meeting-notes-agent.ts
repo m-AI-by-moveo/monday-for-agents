@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import type { MondayBoard } from "./monday-client.js";
 
 export interface ActionItem {
   title: string;
@@ -12,9 +13,10 @@ export interface MeetingAnalysis {
   summary: string;
   actionItems: ActionItem[];
   decisions: string[];
+  suggestedBoardId?: string;
 }
 
-const SYSTEM_PROMPT = `You are a meeting transcript analyzer. Your job is to extract structured information from meeting transcripts.
+const BASE_SYSTEM_PROMPT = `You are a meeting transcript analyzer. Your job is to extract structured information from meeting transcripts.
 
 Given a meeting transcript, produce a JSON object with the following schema:
 {
@@ -40,6 +42,10 @@ Rules:
 - Keep the summary concise: 2-3 sentences max.
 - Respond ONLY with the JSON object, no other text.`;
 
+const BOARD_SUGGESTION_ADDENDUM = `
+
+Additionally, a list of available Monday.com boards will be provided. Based on the meeting content (client name, project name, topic), suggest the most relevant board by including a "suggestedBoardId" field in your JSON response with the board's ID. If no board seems relevant, omit the field.`;
+
 export class MeetingNotesAgent {
   private client: Anthropic;
 
@@ -50,20 +56,31 @@ export class MeetingNotesAgent {
   async analyzeMeetingTranscript(
     transcript: string,
     meetingTitle: string,
+    boardList?: MondayBoard[],
   ): Promise<MeetingAnalysis> {
     const trimmed = transcript.trim();
     if (!trimmed || trimmed.length < 20) {
       return { summary: "Empty or too-short transcript.", actionItems: [], decisions: [] };
     }
 
+    const systemPrompt = boardList && boardList.length > 0
+      ? BASE_SYSTEM_PROMPT + BOARD_SUGGESTION_ADDENDUM
+      : BASE_SYSTEM_PROMPT;
+
+    let userContent = `Meeting title: "${meetingTitle}"\n\nTranscript:\n${trimmed}`;
+    if (boardList && boardList.length > 0) {
+      const boardLines = boardList.map((b) => `- ${b.id}: ${b.name}`).join("\n");
+      userContent += `\n\nAvailable Monday.com boards:\n${boardLines}`;
+    }
+
     const response = await this.client.messages.create({
       model: "claude-sonnet-4-5-20250929",
       max_tokens: 2048,
-      system: SYSTEM_PROMPT,
+      system: systemPrompt,
       messages: [
         {
           role: "user",
-          content: `Meeting title: "${meetingTitle}"\n\nTranscript:\n${trimmed}`,
+          content: userContent,
         },
       ],
     });
@@ -81,11 +98,15 @@ export class MeetingNotesAgent {
       }
 
       const parsed = JSON.parse(jsonText);
-      return {
+      const result: MeetingAnalysis = {
         summary: parsed.summary ?? "",
         actionItems: Array.isArray(parsed.actionItems) ? parsed.actionItems : [],
         decisions: Array.isArray(parsed.decisions) ? parsed.decisions : [],
       };
+      if (parsed.suggestedBoardId) {
+        result.suggestedBoardId = String(parsed.suggestedBoardId);
+      }
+      return result;
     } catch {
       // Return raw text as summary if JSON parsing fails
       return {

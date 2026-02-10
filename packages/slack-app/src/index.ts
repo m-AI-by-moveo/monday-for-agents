@@ -26,7 +26,7 @@ import { MeetingStore } from "./services/meeting-store.js";
 import { MeetingNotesAgent } from "./services/meeting-notes-agent.js";
 import { MeetingSyncService } from "./services/meeting-sync.js";
 import { MeetingSyncScheduler } from "./services/meeting-sync-scheduler.js";
-import { registerActions } from "./handlers/actions.js";
+import { registerActions, registerCreateTaskActions } from "./handlers/actions.js";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -98,6 +98,7 @@ const app = new App({
 
 registerMentionHandler(app);
 registerThreadHandler(app);
+registerCreateTaskActions(app);
 
 // ---------------------------------------------------------------------------
 // Agent notification webhook route (needs `app.client` for posting)
