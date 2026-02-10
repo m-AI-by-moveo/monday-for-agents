@@ -39,7 +39,7 @@ const a2a = createA2AClient();
 // /status — query Scrum Master for board status
 // ---------------------------------------------------------------------------
 
-async function fetchBoardStatus(): Promise<{ blocks: any[]; text: string }> {
+export async function fetchBoardStatus(): Promise<{ blocks: any[]; text: string }> {
   const agentUrl = AGENT_URLS["scrum-master"];
   if (!agentUrl) {
     return errorBlocks("Scrum Master agent is not configured.");

@@ -6,6 +6,7 @@ import {
   type A2AResponse,
 } from "../services/a2a-client.js";
 import { threadMap } from "./mention.js";
+import type { IntentType } from "../services/intent-router.js";
 import {
   agentResponseBlocks,
   errorBlocks,
@@ -38,6 +39,11 @@ export function registerThreadHandler(app: App): void {
       // Check if we have an active agent conversation for this thread
       const mapping = threadMap.get(threadTs);
       if (!mapping) return; // not a tracked thread – ignore
+
+      // Only continue conversations for agent-chat threads.
+      // Other intents (create-task, calendar, drive, etc.) are one-shot —
+      // follow-ups in those threads are ignored unless the user @mentions again.
+      if (mapping.intent && mapping.intent !== "agent-chat") return;
 
       const messageText =
         "text" in event && typeof event.text === "string" ? event.text : "";

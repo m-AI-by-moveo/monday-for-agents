@@ -1,19 +1,19 @@
 import type { App, AllMiddlewareArgs, SlackEventMiddlewareArgs } from "@slack/bolt";
 import type { WebClient } from "@slack/web-api";
 import { v4 as uuidv4 } from "uuid";
+import { IntentRouter, type IntentType } from "../services/intent-router.js";
 import {
-  createA2AClient,
-  extractTextFromTask,
-  AGENT_URLS,
-  type A2AResponse,
-} from "../services/a2a-client.js";
-import {
-  agentResponseBlocks,
-  errorBlocks,
-  warningBlocks,
-  loadingBlocks,
-  noResponseBlocks,
-} from "../ui/block-builder.js";
+  handleCreateTask,
+  handleBoardStatus,
+  handleMeetingSync,
+  handleCalendar,
+  handleDrive,
+  handleAgentChat,
+  type IntentContext,
+} from "./intent-handlers.js";
+import { loadingBlocks } from "../ui/block-builder.js";
+import type { GoogleServices } from "./commands.js";
+import type { MeetingStore } from "../services/meeting-store.js";
 
 // ---------------------------------------------------------------------------
 // State — in-memory mapping between Slack threads and A2A context IDs
@@ -22,32 +22,15 @@ import {
 export interface ThreadMapping {
   contextId: string;
   agentKey: string;
+  intent?: IntentType;
 }
 
 /** Map from Slack thread_ts to A2A context metadata */
 export const threadMap = new Map<string, ThreadMapping>();
 
 // ---------------------------------------------------------------------------
-// Routing logic
+// Bot user ID + mention resolution (unchanged)
 // ---------------------------------------------------------------------------
-
-const SCRUM_MASTER_KEYWORDS = [
-  "status",
-  "standup",
-  "blocked",
-  "summary",
-  "report",
-];
-
-function pickAgent(text: string): string {
-  const lower = text.toLowerCase();
-  for (const kw of SCRUM_MASTER_KEYWORDS) {
-    if (lower.includes(kw)) {
-      return "scrum-master";
-    }
-  }
-  return "product-owner";
-}
 
 /** Cached bot user ID – resolved once on first mention. */
 let botUserId: string | null = null;
@@ -57,11 +40,6 @@ const userNameCache = new Map<string, string>();
 
 let staticMapLoaded = false;
 
-/**
- * Load static user mappings from SLACK_USER_MAP env var (JSON object).
- * Example: SLACK_USER_MAP={"U0AD6S4BWNL":"Or Bruchim","U12345":"John"}
- * Called lazily (not at import time) so dotenv has loaded the .env first.
- */
 function loadStaticUserMap(): void {
   if (staticMapLoaded) return;
   staticMapLoaded = true;
@@ -78,14 +56,8 @@ function loadStaticUserMap(): void {
   }
 }
 
-/**
- * Populate the user name cache from the Slack API (requires users:read scope).
- * Falls back to static mapping if the scope is missing.
- */
 async function ensureUserCache(client: WebClient): Promise<void> {
-  // Load static mappings first (lazy — .env is loaded by now)
   loadStaticUserMap();
-  // If we already have entries (from static map or previous API call), skip
   if (userNameCache.size > 0) return;
   try {
     let cursor: string | undefined;
@@ -117,12 +89,7 @@ async function ensureUserCache(client: WebClient): Promise<void> {
   }
 }
 
-/**
- * Replace the bot's own @mention with nothing, and resolve any other
- * <@USERID> mentions to the user's real name so the agent sees
- * "create a task for Or Bruchim" instead of "create a task for".
- */
-async function resolveMentions(
+export async function resolveMentions(
   client: WebClient,
   text: string,
 ): Promise<string> {
@@ -131,7 +98,6 @@ async function resolveMentions(
     botUserId = auth.user_id as string;
   }
 
-  // Try loading from API (skips if cache already has entries from static map)
   await ensureUserCache(client);
 
   const mentionRegex = /<@([A-Z0-9]+)>/g;
@@ -162,12 +128,21 @@ async function resolveMentions(
 }
 
 // ---------------------------------------------------------------------------
+// Dependencies interface
+// ---------------------------------------------------------------------------
+
+export interface MentionHandlerDeps {
+  googleServices?: GoogleServices | null;
+  meetingStore?: MeetingStore | null;
+}
+
+// ---------------------------------------------------------------------------
 // Handler
 // ---------------------------------------------------------------------------
 
-const a2a = createA2AClient();
+const intentRouter = new IntentRouter();
 
-export function registerMentionHandler(app: App): void {
+export function registerMentionHandler(app: App, deps: MentionHandlerDeps = {}): void {
   app.event(
     "app_mention",
     async ({
@@ -183,62 +158,61 @@ export function registerMentionHandler(app: App): void {
         return;
       }
 
-      const agentKey = pickAgent(messageText);
-      const agentUrl = AGENT_URLS[agentKey];
-      if (!agentUrl) {
-        const { blocks, text } = errorBlocks(`Unknown agent: ${agentKey}`);
-        await say({ blocks, text, thread_ts: event.ts });
-        return;
-      }
-
-      // Use the existing thread_ts if this mention is already inside a thread,
-      // otherwise use the event ts as the thread root.
       const threadTs = event.thread_ts ?? event.ts;
 
-      // Create (or reuse) a context ID for this thread
-      let mapping = threadMap.get(threadTs);
-      if (!mapping) {
-        mapping = { contextId: uuidv4(), agentKey };
-        threadMap.set(threadTs, mapping);
-      }
-
-      console.log(
-        `[mention] Routing to ${agentKey} | thread=${threadTs} context=${mapping.contextId}`,
-      );
-
-      // Post an immediate acknowledgment so the user knows we're working
-      const { blocks: loadBlocks, text: loadText } = loadingBlocks(
-        `Routing to *${agentKey}*... This may take a few minutes.`,
-      );
+      // Classify intent
+      const { blocks: loadBlocks, text: loadText } = loadingBlocks("Thinking...");
       await say({ blocks: loadBlocks, text: loadText, thread_ts: threadTs });
 
-      let response: A2AResponse;
-      try {
-        response = await a2a.sendMessage(agentUrl, messageText, mapping.contextId);
-      } catch (err) {
-        console.error("[mention] Failed to contact agent:", err);
-        const { blocks, text } = warningBlocks(
-          `Could not reach the *${agentKey}* agent. Please try again later.`,
-        );
-        await say({ blocks, text, thread_ts: threadTs });
-        return;
-      }
+      const { intent, agentKey } = await intentRouter.classify(messageText);
+      console.log(`[mention] Intent: ${intent} | Agent: ${agentKey} | thread=${threadTs}`);
 
-      if (response.error) {
-        const { blocks, text } = errorBlocks(
-          `Agent error: ${response.error.message}`,
-        );
-        await say({ blocks, text, thread_ts: threadTs });
-        return;
-      }
-
-      if (response.result) {
-        const replyText = extractTextFromTask(response.result);
-        const { blocks, text } = agentResponseBlocks(agentKey, replyText);
-        await say({ blocks, text, thread_ts: threadTs });
+      // Store intent in thread mapping for continuations
+      let mapping = threadMap.get(threadTs);
+      if (!mapping) {
+        mapping = { contextId: uuidv4(), agentKey, intent };
+        threadMap.set(threadTs, mapping);
       } else {
-        const { blocks, text } = noResponseBlocks();
-        await say({ blocks, text, thread_ts: threadTs });
+        mapping.intent = intent;
+        mapping.agentKey = agentKey;
+      }
+
+      const ctx: IntentContext = {
+        say,
+        client,
+        event: {
+          ts: event.ts,
+          thread_ts: event.thread_ts,
+          user: event.user,
+          channel: event.channel,
+          text: event.text,
+        },
+        threadTs,
+        messageText,
+        googleServices: deps.googleServices,
+        meetingStore: deps.meetingStore,
+      };
+
+      switch (intent) {
+        case "create-task":
+          await handleCreateTask(ctx);
+          break;
+        case "board-status":
+          await handleBoardStatus(ctx);
+          break;
+        case "meeting-sync":
+          await handleMeetingSync(ctx);
+          break;
+        case "calendar":
+          await handleCalendar(ctx);
+          break;
+        case "drive":
+          await handleDrive(ctx);
+          break;
+        case "agent-chat":
+        default:
+          await handleAgentChat(ctx, agentKey);
+          break;
       }
     },
   );

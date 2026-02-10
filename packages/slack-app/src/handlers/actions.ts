@@ -6,9 +6,11 @@ import {
 } from "../services/a2a-client.js";
 import type { MeetingStore } from "../services/meeting-store.js";
 import type { MeetingAnalysis } from "../services/meeting-notes-agent.js";
-import { fetchBoards } from "../services/monday-client.js";
+import { fetchBoards, fetchUsers } from "../services/monday-client.js";
 import { buildMeetingEditModal, type MeetingModalMetadata } from "../ui/meeting-modal-blocks.js";
 import type { CreateTaskModalMetadata } from "../ui/create-task-modal-blocks.js";
+import { buildCreateTaskModal } from "../ui/create-task-modal-blocks.js";
+import type { ExtractedTask } from "../services/task-extractor-agent.js";
 
 export function registerActions(
   app: App,
@@ -342,6 +344,216 @@ export function registerCreateTaskActions(app: App): void {
       } catch (ephErr: any) {
         console.error("[actions] Failed to post ephemeral error:", ephErr.message);
       }
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Task preview button actions (from @mention intent router)
+// ---------------------------------------------------------------------------
+
+export function registerTaskPreviewActions(app: App): void {
+  // -------------------------------------------------------------------------
+  // mention_create_task — Create the task directly from preview
+  // -------------------------------------------------------------------------
+
+  app.action("mention_create_task", async ({ ack, body, client }) => {
+    await ack();
+
+    const message = (body as any).message;
+    const channel = (body as any).channel?.id;
+    const messageTs = message?.ts;
+
+    let extractedTask: ExtractedTask | null = null;
+    let boardId = process.env.MONDAY_BOARD_ID ?? "";
+    try {
+      const metadata = message?.metadata;
+      if (metadata?.event_payload?.extracted_task) {
+        extractedTask = JSON.parse(metadata.event_payload.extracted_task as string);
+      }
+    } catch {
+      // Fall through
+    }
+
+    if (!extractedTask || !extractedTask.taskName) {
+      if (channel && messageTs) {
+        await client.chat.update({
+          channel,
+          ts: messageTs,
+          text: ":warning: Could not retrieve task details. Please try again.",
+          blocks: [],
+        });
+      }
+      return;
+    }
+
+    // Build prompt for PO agent
+    let prompt = `Create a task on Monday.com with the following details:\n`;
+    prompt += `- Task name: ${extractedTask.taskName}\n`;
+    if (extractedTask.description) prompt += `- Description: ${extractedTask.description}\n`;
+    if (boardId) prompt += `- Board ID: ${boardId}\n`;
+    if (extractedTask.assignee) prompt += `- Assign to: ${extractedTask.assignee}\n`;
+    prompt += `- Status: ${extractedTask.status}\n`;
+    prompt += `- Priority: ${extractedTask.priority}\n`;
+
+    const a2a = createA2AClient();
+    const poUrl = AGENT_URLS["product-owner"];
+
+    try {
+      // Update message to show loading
+      if (channel && messageTs) {
+        await client.chat.update({
+          channel,
+          ts: messageTs,
+          text: ":hourglass_flowing_sand: Creating task...",
+          blocks: [
+            {
+              type: "section",
+              text: { type: "mrkdwn", text: ":hourglass_flowing_sand: Creating task..." },
+            },
+          ],
+        });
+      }
+
+      const response = await a2a.sendMessage(poUrl, prompt);
+      const resultText = response.result
+        ? extractTextFromTask(response.result)
+        : "Task created.";
+
+      if (channel && messageTs) {
+        await client.chat.update({
+          channel,
+          ts: messageTs,
+          text: "Task created from @mention.",
+          blocks: [
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: `:white_check_mark: *Task created:* ${extractedTask.taskName}\n${resultText}`,
+              },
+            },
+            {
+              type: "context",
+              elements: [
+                {
+                  type: "mrkdwn",
+                  text: `:robot_face: Created by <@${(body as any).user?.id}>`
+                    + (boardId ? ` | Board: \`${boardId}\`` : "")
+                    + ` | Priority: ${extractedTask.priority}`,
+                },
+              ],
+            },
+          ],
+        });
+      }
+    } catch (err: any) {
+      console.error("[actions] mention_create_task error:", err);
+      if (channel && messageTs) {
+        await client.chat.update({
+          channel,
+          ts: messageTs,
+          text: `:x: Failed to create task: ${err.message ?? "Unknown error"}`,
+          blocks: [],
+        });
+      }
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // mention_edit_task — Open the full create-task modal for editing
+  // -------------------------------------------------------------------------
+
+  app.action("mention_edit_task", async ({ ack, body, client }) => {
+    await ack();
+
+    const message = (body as any).message;
+    const triggerId = (body as any).trigger_id;
+
+    if (!triggerId) {
+      console.error("[actions] mention_edit_task: No trigger_id available");
+      return;
+    }
+
+    let extractedTask: ExtractedTask | null = null;
+    let boards: { id: string; name: string }[] = [];
+    let users: { id: string; name: string }[] = [];
+    let channelId = "";
+    let userId = "";
+    try {
+      const metadata = message?.metadata;
+      if (metadata?.event_payload?.extracted_task) {
+        extractedTask = JSON.parse(metadata.event_payload.extracted_task as string);
+      }
+      channelId = metadata?.event_payload?.channel_id ?? (body as any).channel?.id ?? "";
+      userId = metadata?.event_payload?.user_id ?? (body as any).user?.id ?? "";
+      if (metadata?.event_payload?.boards_json) {
+        boards = JSON.parse(metadata.event_payload.boards_json as string);
+      }
+      if (metadata?.event_payload?.users_json) {
+        users = JSON.parse(metadata.event_payload.users_json as string);
+      }
+    } catch {
+      // Fall through with defaults
+    }
+
+    if (!extractedTask) {
+      extractedTask = {
+        taskName: "",
+        description: "",
+        assignee: "",
+        priority: "Medium",
+        status: "To Do",
+      };
+    }
+
+    // If boards/users weren't in metadata, fetch them now
+    if (boards.length === 0) {
+      try { boards = await fetchBoards(); } catch { /* ok */ }
+    }
+    if (users.length === 0) {
+      try { users = await fetchUsers(); } catch { /* ok */ }
+    }
+
+    const modalMetadata: CreateTaskModalMetadata = { channelId, userId };
+    const view = buildCreateTaskModal(extractedTask, boards, modalMetadata, users);
+
+    try {
+      await client.views.open({
+        trigger_id: triggerId,
+        view: view as any,
+      });
+    } catch (err: any) {
+      console.error("[actions] mention_edit_task: Failed to open modal:", err.message);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // mention_cancel_task — Cancel the task creation
+  // -------------------------------------------------------------------------
+
+  app.action("mention_cancel_task", async ({ ack, body, client }) => {
+    await ack();
+
+    const message = (body as any).message;
+    const channel = (body as any).channel?.id;
+    const messageTs = message?.ts;
+
+    if (channel && messageTs) {
+      await client.chat.update({
+        channel,
+        ts: messageTs,
+        text: "Task creation cancelled.",
+        blocks: [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: `:no_entry_sign: *Cancelled* by <@${(body as any).user?.id}>`,
+            },
+          },
+        ],
+      });
     }
   });
 }

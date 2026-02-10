@@ -26,7 +26,7 @@ import { MeetingStore } from "./services/meeting-store.js";
 import { MeetingNotesAgent } from "./services/meeting-notes-agent.js";
 import { MeetingSyncService } from "./services/meeting-sync.js";
 import { MeetingSyncScheduler } from "./services/meeting-sync-scheduler.js";
-import { registerActions, registerCreateTaskActions } from "./handlers/actions.js";
+import { registerActions, registerCreateTaskActions, registerTaskPreviewActions } from "./handlers/actions.js";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -93,12 +93,13 @@ const app = new App({
 });
 
 // ---------------------------------------------------------------------------
-// Register handlers
+// Register handlers (mention handler is registered in the async IIFE below
+// so it can receive googleServices + meetingStore deps)
 // ---------------------------------------------------------------------------
 
-registerMentionHandler(app);
 registerThreadHandler(app);
 registerCreateTaskActions(app);
+registerTaskPreviewActions(app);
 
 // ---------------------------------------------------------------------------
 // Agent notification webhook route (needs `app.client` for posting)
@@ -229,6 +230,9 @@ if (process.env.GOOGLE_CLIENT_ID) {
       `[slack-app] Calendar-aware meeting sync enabled for user ${schedulerConfig.meetingSync.slackUserId}`,
     );
   }
+
+  // Register mention handler with deps (must happen after googleServices/meetingStore init)
+  registerMentionHandler(app, { googleServices, meetingStore });
 
   if (schedulerConfig.enabled) {
     const scheduler = createSchedulerService({
