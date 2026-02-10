@@ -22,6 +22,9 @@ import type { GoogleCalendarService } from "../services/google-calendar.js";
 import type { GoogleDriveService } from "../services/google-drive.js";
 import { GoogleCalendarAgent } from "../services/google-calendar-agent.js";
 import { GoogleDriveAgent } from "../services/google-drive-agent.js";
+import { MeetingSyncService } from "../services/meeting-sync.js";
+import { MeetingNotesAgent } from "../services/meeting-notes-agent.js";
+import type { MeetingStore } from "../services/meeting-store.js";
 
 const a2a = createA2AClient();
 
@@ -74,6 +77,7 @@ export function registerCommands(
   app: App,
   scheduler?: SchedulerService | null,
   googleServices?: GoogleServices | null,
+  meetingStore?: MeetingStore | null,
 ): void {
   // Lazy-init LLM agents (only when first needed)
   let calendarAgent: GoogleCalendarAgent | null = null;
@@ -259,6 +263,65 @@ export function registerCommands(
     } catch (err: any) {
       console.error("[commands] /gdrive error:", err);
       const { blocks, text } = errorBlocks(err.message ?? "Drive operation failed.");
+      await respond({ response_type: "ephemeral", blocks, text });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // /meeting-sync — Manually trigger meeting notes extraction
+  // -------------------------------------------------------------------------
+
+  app.command("/meeting-sync", async ({ ack, respond, command }) => {
+    await ack();
+    console.log("[commands] /meeting-sync invoked");
+
+    if (!googleServices) {
+      await respond({ response_type: "ephemeral", text: "Google integration is not configured." });
+      return;
+    }
+
+    if (!meetingStore) {
+      await respond({ response_type: "ephemeral", text: "Meeting sync is not enabled." });
+      return;
+    }
+
+    const userId = command.user_id;
+    if (!googleServices.auth.isConnected(userId)) {
+      const authUrl = googleServices.auth.getAuthUrl(userId);
+      const { blocks, text } = googleConnectBlocks(authUrl);
+      await respond({ response_type: "ephemeral", blocks, text });
+      return;
+    }
+
+    const loading = loadingBlocks("Checking recent meetings for transcripts...");
+    await respond({ response_type: "ephemeral", blocks: loading.blocks, text: loading.text });
+
+    try {
+      const meetingNotesAgent = new MeetingNotesAgent();
+      const channelId = command.channel_id;
+      const syncService = new MeetingSyncService(
+        googleServices.auth,
+        meetingStore,
+        meetingNotesAgent,
+        app.client,
+        channelId,
+      );
+
+      const result = await syncService.checkRecentMeetings(userId);
+
+      let summary = `:memo: *Meeting Sync Results*\n`;
+      summary += `• Meetings found: ${result.meetingsFound}\n`;
+      summary += `• Transcripts found: ${result.transcriptsFound}\n`;
+      summary += `• Previews posted: ${result.previewsPosted}\n`;
+      summary += `• Skipped: ${result.skipped}`;
+      if (result.errors.length > 0) {
+        summary += `\n• Errors: ${result.errors.join(", ")}`;
+      }
+
+      await respond({ response_type: "ephemeral", text: summary });
+    } catch (err: any) {
+      console.error("[commands] /meeting-sync error:", err);
+      const { blocks, text } = errorBlocks(err.message ?? "Meeting sync failed.");
       await respond({ response_type: "ephemeral", blocks, text });
     }
   });

@@ -11,6 +11,7 @@ export interface SchedulerConfig {
   standup: { enabled: boolean; cron: string };
   staleCheck: { enabled: boolean; cron: string };
   weekly: { enabled: boolean; cron: string };
+  meetingSync: { enabled: boolean; cron: string; slackUserId: string };
 }
 
 function envBool(key: string, fallback: boolean): boolean {
@@ -44,11 +45,14 @@ export function loadSchedulerConfig(): SchedulerConfig {
   const staleCheckCron = envString("SCHEDULER_STALE_CHECK_CRON", "*/30 * * * *");
   const weeklyCron = envString("SCHEDULER_WEEKLY_CRON", "0 9 * * 1");
 
+  const meetingSyncCron = envString("SCHEDULER_MEETING_SYNC_CRON", "*/15 * * * *");
+
   // Validate all cron expressions at startup
   if (enabled) {
     validateCron(standupCron, "SCHEDULER_STANDUP_CRON");
     validateCron(staleCheckCron, "SCHEDULER_STALE_CHECK_CRON");
     validateCron(weeklyCron, "SCHEDULER_WEEKLY_CRON");
+    validateCron(meetingSyncCron, "SCHEDULER_MEETING_SYNC_CRON");
   }
 
   return {
@@ -66,6 +70,11 @@ export function loadSchedulerConfig(): SchedulerConfig {
     weekly: {
       enabled: envBool("SCHEDULER_WEEKLY_ENABLED", true),
       cron: weeklyCron,
+    },
+    meetingSync: {
+      enabled: envBool("SCHEDULER_MEETING_SYNC_ENABLED", false),
+      cron: meetingSyncCron,
+      slackUserId: envString("MEETING_SYNC_SLACK_USER_ID", ""),
     },
   };
 }

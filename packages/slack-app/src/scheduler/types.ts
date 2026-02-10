@@ -1,4 +1,6 @@
 import type { KnownBlock, Block } from "@slack/types";
+import type { GoogleAuthService } from "../services/google-auth.js";
+import type { MeetingStore } from "../services/meeting-store.js";
 
 // ---------------------------------------------------------------------------
 // Scheduler types
@@ -12,6 +14,10 @@ export interface ScheduledJobContext {
         channel: string;
         text: string;
         blocks?: (KnownBlock | Block)[];
+        metadata?: {
+          event_type: string;
+          event_payload: Record<string, unknown>;
+        };
       }) => Promise<unknown>;
     };
   };
@@ -19,6 +25,12 @@ export interface ScheduledJobContext {
   channelId: string;
   /** Base URL for the scrum-master A2A agent */
   scrumMasterUrl: string;
+  /** Google auth service (optional — for meeting sync) */
+  googleAuth?: GoogleAuthService;
+  /** Slack user ID whose Google tokens to use for meeting sync */
+  meetingSyncUserId?: string;
+  /** Meeting store for deduplication (optional — for meeting sync) */
+  meetingStore?: MeetingStore;
 }
 
 export interface ScheduledJobResult {
