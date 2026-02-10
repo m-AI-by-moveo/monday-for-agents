@@ -64,7 +64,7 @@ export function loadSchedulerConfig(): SchedulerConfig {
       cron: standupCron,
     },
     staleCheck: {
-      enabled: envBool("SCHEDULER_STALE_CHECK_ENABLED", true),
+      enabled: envBool("SCHEDULER_STALE_CHECK_ENABLED", false),
       cron: staleCheckCron,
     },
     weekly: {
