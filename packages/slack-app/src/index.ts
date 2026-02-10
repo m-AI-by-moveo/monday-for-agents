@@ -18,12 +18,14 @@ import { AGENT_URLS } from "./services/a2a-client.js";
 import { createDailyStandupJob } from "./scheduler/jobs/daily-standup.js";
 import { createStaleTaskCheckerJob } from "./scheduler/jobs/stale-task-checker.js";
 import { createWeeklySummaryJob } from "./scheduler/jobs/weekly-summary.js";
-import { createMeetingSyncJob } from "./scheduler/jobs/meeting-sync.js";
 import { GoogleTokenStore } from "./services/google-token-store.js";
 import { GoogleAuthService } from "./services/google-auth.js";
 import { GoogleCalendarService } from "./services/google-calendar.js";
 import { GoogleDriveService } from "./services/google-drive.js";
 import { MeetingStore } from "./services/meeting-store.js";
+import { MeetingNotesAgent } from "./services/meeting-notes-agent.js";
+import { MeetingSyncService } from "./services/meeting-sync.js";
+import { MeetingSyncScheduler } from "./services/meeting-sync-scheduler.js";
 import { registerActions } from "./handlers/actions.js";
 
 // ---------------------------------------------------------------------------
@@ -192,37 +194,47 @@ if (process.env.GOOGLE_CLIENT_ID) {
 
   const schedulerConfig = loadSchedulerConfig();
 
-  // Meeting store + actions (available even without scheduler)
+  // Meeting store + smart scheduler (available even without cron scheduler)
   let meetingStore: MeetingStore | null = null;
-  if (schedulerConfig.meetingSync.enabled) {
+  let meetingSyncScheduler: MeetingSyncScheduler | null = null;
+
+  if (
+    schedulerConfig.meetingSync.enabled &&
+    schedulerConfig.meetingSync.slackUserId &&
+    googleServices
+  ) {
     meetingStore = new MeetingStore();
     registerActions(app, meetingStore);
+
+    const meetingNotesAgent = new MeetingNotesAgent();
+    const syncService = new MeetingSyncService(
+      googleServices.auth,
+      meetingStore,
+      meetingNotesAgent,
+      app.client,
+      schedulerConfig.channelId,
+    );
+
+    meetingSyncScheduler = new MeetingSyncScheduler(
+      googleServices.auth,
+      schedulerConfig.meetingSync.slackUserId,
+      meetingStore,
+      syncService,
+    );
+
+    await meetingSyncScheduler.start();
     console.log("[slack-app] Meeting sync actions registered");
+    console.log(
+      `[slack-app] Calendar-aware meeting sync enabled for user ${schedulerConfig.meetingSync.slackUserId}`,
+    );
   }
 
   if (schedulerConfig.enabled) {
-    const schedulerCtx: Parameters<typeof createSchedulerService>[0] = {
+    const scheduler = createSchedulerService({
       slackClient: app.client,
       channelId: schedulerConfig.channelId,
       scrumMasterUrl: AGENT_URLS["scrum-master"],
-    };
-
-    // Wire Google auth + meeting store into scheduler context for meeting sync
-    if (
-      schedulerConfig.meetingSync.enabled &&
-      schedulerConfig.meetingSync.slackUserId &&
-      googleServices &&
-      meetingStore
-    ) {
-      schedulerCtx.googleAuth = googleServices.auth;
-      schedulerCtx.meetingSyncUserId = schedulerConfig.meetingSync.slackUserId;
-      schedulerCtx.meetingStore = meetingStore;
-      console.log(
-        `[slack-app] Meeting sync enabled for user ${schedulerConfig.meetingSync.slackUserId}`,
-      );
-    }
-
-    const scheduler = createSchedulerService(schedulerCtx);
+    });
 
     scheduler.register(
       createDailyStandupJob(
@@ -242,20 +254,15 @@ if (process.env.GOOGLE_CLIENT_ID) {
         schedulerConfig.weekly.cron,
       ),
     );
-    scheduler.register(
-      createMeetingSyncJob(
-        schedulerConfig.meetingSync.enabled,
-        schedulerConfig.meetingSync.cron,
-      ),
-    );
 
     scheduler.startAll(schedulerConfig.timezone);
 
     registerCommands(app, scheduler, googleServices, meetingStore);
 
     const gracefulShutdown = () => {
-      console.log("[slack-app] Shutting down scheduler...");
+      console.log("[slack-app] Shutting down...");
       scheduler.stopAll();
+      if (meetingSyncScheduler) meetingSyncScheduler.stop();
       if (meetingStore) meetingStore.close();
       process.exit(0);
     };
