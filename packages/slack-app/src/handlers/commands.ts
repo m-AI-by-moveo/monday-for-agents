@@ -26,7 +26,7 @@ import { MeetingSyncService } from "../services/meeting-sync.js";
 import { MeetingNotesAgent } from "../services/meeting-notes-agent.js";
 import type { MeetingStore } from "../services/meeting-store.js";
 import { TaskExtractorAgent } from "../services/task-extractor-agent.js";
-import { fetchBoards } from "../services/monday-client.js";
+import { fetchBoards, fetchUsers } from "../services/monday-client.js";
 import {
   buildCreateTaskLoadingModal,
   buildCreateTaskModal,
@@ -346,16 +346,20 @@ export function registerCommands(
 
       // Extract task details + fetch boards in parallel
       if (!taskExtractor) taskExtractor = new TaskExtractorAgent();
-      const [extractedTask, boards] = await Promise.all([
+      const [extractedTask, boards, users] = await Promise.all([
         taskExtractor.extractTaskFromMessages(formattedMessages),
         fetchBoards().catch((err) => {
           console.warn("[commands] /create-task: could not fetch boards:", err.message);
           return [];
         }),
+        fetchUsers().catch((err) => {
+          console.warn("[commands] /create-task: could not fetch users:", err.message);
+          return [];
+        }),
       ]);
 
       // Update modal with full form
-      const fullView = buildCreateTaskModal(extractedTask, boards, metadata);
+      const fullView = buildCreateTaskModal(extractedTask, boards, metadata, users);
       await client.views.update({
         view_id: viewId,
         view: fullView as any,

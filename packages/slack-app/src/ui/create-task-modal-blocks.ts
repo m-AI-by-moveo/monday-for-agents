@@ -1,5 +1,5 @@
 import type { ExtractedTask } from "../services/task-extractor-agent.js";
-import type { MondayBoard } from "../services/monday-client.js";
+import type { MondayBoard, MondayUser } from "../services/monday-client.js";
 
 export interface CreateTaskModalMetadata {
   channelId: string;
@@ -29,6 +29,7 @@ export function buildCreateTaskModal(
   extractedTask: ExtractedTask,
   boards: MondayBoard[],
   metadata: CreateTaskModalMetadata,
+  users: MondayUser[] = [],
 ) {
   const defaultBoardId = process.env.MONDAY_BOARD_ID ?? "";
 
@@ -90,18 +91,52 @@ export function buildCreateTaskModal(
   }
 
   // Assignee (optional)
-  blocks.push({
-    type: "input",
-    block_id: "assignee_block",
-    label: { type: "plain_text", text: "Assignee" },
-    element: {
-      type: "plain_text_input",
-      action_id: "assignee_input",
-      initial_value: extractedTask.assignee,
-      placeholder: { type: "plain_text", text: "Person responsible" },
-    },
-    optional: true,
-  });
+  if (users.length > 0) {
+    const userOptions = users.map((u) => ({
+      text: { type: "plain_text" as const, text: u.name.substring(0, 75) },
+      value: u.id,
+    }));
+
+    const assigneeElement: any = {
+      type: "static_select",
+      action_id: "assignee_select",
+      placeholder: { type: "plain_text", text: "Select assignee" },
+      options: userOptions,
+    };
+
+    // Try to pre-select based on LLM-extracted name (case-insensitive partial match)
+    if (extractedTask.assignee) {
+      const lowerAssignee = extractedTask.assignee.toLowerCase();
+      const match = userOptions.find((o) =>
+        o.text.text.toLowerCase().includes(lowerAssignee) ||
+        lowerAssignee.includes(o.text.text.toLowerCase()),
+      );
+      if (match) {
+        assigneeElement.initial_option = match;
+      }
+    }
+
+    blocks.push({
+      type: "input",
+      block_id: "assignee_block",
+      label: { type: "plain_text", text: "Assignee" },
+      element: assigneeElement,
+      optional: true,
+    });
+  } else {
+    blocks.push({
+      type: "input",
+      block_id: "assignee_block",
+      label: { type: "plain_text", text: "Assignee" },
+      element: {
+        type: "plain_text_input",
+        action_id: "assignee_input",
+        initial_value: extractedTask.assignee,
+        placeholder: { type: "plain_text", text: "Person responsible" },
+      },
+      optional: true,
+    });
+  }
 
   // Status selector
   const statusOptions = ["To Do", "Working on it", "In Progress", "Done"].map((s) => ({

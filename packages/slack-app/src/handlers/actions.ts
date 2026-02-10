@@ -275,7 +275,10 @@ export function registerCreateTaskActions(app: App): void {
     const boardId = values.board_block?.board_select?.selected_option?.value
       ?? process.env.MONDAY_BOARD_ID
       ?? "";
-    const assignee = values.assignee_block?.assignee_input?.value ?? "";
+    const assigneeSelect = values.assignee_block?.assignee_select?.selected_option;
+    const assignee = assigneeSelect?.text?.text
+      ?? values.assignee_block?.assignee_input?.value
+      ?? "";
     const status = values.status_block?.status_select?.selected_option?.value ?? "To Do";
     const priority = values.priority_block?.priority_select?.selected_option?.value ?? "Medium";
 

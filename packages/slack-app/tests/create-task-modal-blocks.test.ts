@@ -4,7 +4,7 @@ import {
   buildCreateTaskModal,
 } from "../src/ui/create-task-modal-blocks.js";
 import type { ExtractedTask } from "../src/services/task-extractor-agent.js";
-import type { MondayBoard } from "../src/services/monday-client.js";
+import type { MondayBoard, MondayUser } from "../src/services/monday-client.js";
 
 const sampleTask: ExtractedTask = {
   taskName: "Fix login bug",
@@ -18,6 +18,12 @@ const sampleBoards: MondayBoard[] = [
   { id: "100", name: "API Project" },
   { id: "200", name: "Frontend Redesign" },
   { id: "300", name: "DevOps" },
+];
+
+const sampleUsers: MondayUser[] = [
+  { id: "1001", name: "Alice Johnson" },
+  { id: "1002", name: "Bob Smith" },
+  { id: "1003", name: "Charlie Brown" },
 ];
 
 const sampleMetadata = {
@@ -80,12 +86,33 @@ describe("buildCreateTaskModal", () => {
     expect(descBlock.element.initial_value).toBe("The SSO login fails on Chrome mobile");
   });
 
-  it("pre-fills assignee from extracted task", () => {
+  it("shows assignee as text input when no users provided", () => {
     const view = buildCreateTaskModal(sampleTask, sampleBoards, sampleMetadata);
 
     const assigneeBlock = view.blocks.find((b: any) => b.block_id === "assignee_block");
     expect(assigneeBlock).toBeDefined();
+    expect(assigneeBlock.element.action_id).toBe("assignee_input");
     expect(assigneeBlock.element.initial_value).toBe("Alice");
+  });
+
+  it("shows assignee as dropdown when users provided", () => {
+    const view = buildCreateTaskModal(sampleTask, sampleBoards, sampleMetadata, sampleUsers);
+
+    const assigneeBlock = view.blocks.find((b: any) => b.block_id === "assignee_block");
+    expect(assigneeBlock).toBeDefined();
+    expect(assigneeBlock.element.action_id).toBe("assignee_select");
+    expect(assigneeBlock.element.options).toHaveLength(3);
+    expect(assigneeBlock.element.options[0].text.text).toBe("Alice Johnson");
+    expect(assigneeBlock.element.options[0].value).toBe("1001");
+  });
+
+  it("pre-selects assignee from LLM match", () => {
+    const view = buildCreateTaskModal(sampleTask, sampleBoards, sampleMetadata, sampleUsers);
+
+    const assigneeBlock = view.blocks.find((b: any) => b.block_id === "assignee_block");
+    expect(assigneeBlock.element.initial_option).toBeDefined();
+    expect(assigneeBlock.element.initial_option.value).toBe("1001");
+    expect(assigneeBlock.element.initial_option.text.text).toBe("Alice Johnson");
   });
 
   it("includes board dropdown with options", () => {
@@ -152,6 +179,8 @@ describe("buildCreateTaskModal", () => {
     expect(descBlock.element.initial_value).toBe("");
 
     const assigneeBlock = view.blocks.find((b: any) => b.block_id === "assignee_block");
+    // No users provided → text input with empty value
+    expect(assigneeBlock.element.action_id).toBe("assignee_input");
     expect(assigneeBlock.element.initial_value).toBe("");
 
     const priorityBlock = view.blocks.find((b: any) => b.block_id === "priority_block");
