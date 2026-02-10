@@ -283,7 +283,8 @@ export async function handleAgentChat(
   ctx: IntentContext,
   agentKey: string,
 ): Promise<void> {
-  const { say, threadTs, messageText } = ctx;
+  const { say, client, event, threadTs, messageText } = ctx;
+  const channelId = event.channel ?? "";
 
   const agentUrl = AGENT_URLS[agentKey];
   if (!agentUrl) {
@@ -308,8 +309,35 @@ export async function handleAgentChat(
   );
   await say({ blocks: loadBlocks, text: loadText, thread_ts: threadTs });
 
+  // Fetch recent channel history so the agent has context
+  let channelContext = "";
+  if (channelId) {
+    try {
+      const history = await client.conversations.history({
+        channel: channelId,
+        limit: 15,
+      });
+      const msgs = (history.messages ?? [])
+        .filter((m: any) => m.text && !m.bot_id)
+        .reverse()
+        .slice(-15);
+      if (msgs.length > 0) {
+        channelContext =
+          "Recent Slack channel messages for context:\n" +
+          msgs.map((m: any) => `- ${m.text}`).join("\n") +
+          "\n\n";
+      }
+    } catch (err: any) {
+      console.warn("[intent-handlers] Could not fetch channel history:", err.message);
+    }
+  }
+
+  const fullMessage = channelContext
+    ? channelContext + "User request: " + messageText
+    : messageText;
+
   try {
-    const response = await a2a.sendMessage(agentUrl, messageText, mapping.contextId);
+    const response = await a2a.sendMessage(agentUrl, fullMessage, mapping.contextId);
 
     if (response.error) {
       const { blocks, text } = errorBlocks(`Agent error: ${response.error.message}`);

@@ -136,11 +136,40 @@ export function registerThreadHandler(app: App, deps: MentionHandlerDeps = {}): 
         `[thread] Continuing conversation with ${mapping.agentKey} | thread=${threadTs} context=${mapping.contextId}`,
       );
 
+      // Fetch thread history so the agent has conversation context
+      const channelId = "channel" in event ? (event as any).channel as string : "";
+      let threadContext = "";
+      if (channelId) {
+        try {
+          const replies = await client.conversations.replies({
+            channel: channelId,
+            ts: threadTs,
+            limit: 20,
+          });
+          const prior = (replies.messages ?? [])
+            .filter((m: any) => m.text && m.ts !== ("ts" in event ? event.ts : ""))
+            .map((m: any) => {
+              const role = m.bot_id ? "Assistant" : "User";
+              return `${role}: ${m.text}`;
+            });
+          if (prior.length > 0) {
+            threadContext =
+              "Conversation so far:\n" + prior.join("\n") + "\n\n";
+          }
+        } catch (err: any) {
+          console.warn("[thread] Could not fetch thread history:", err.message);
+        }
+      }
+
+      const fullMessage = threadContext
+        ? threadContext + "User: " + messageText
+        : messageText;
+
       let response: A2AResponse;
       try {
         response = await a2a.sendMessage(
           agentUrl,
-          messageText,
+          fullMessage,
           mapping.contextId,
         );
       } catch (err) {
