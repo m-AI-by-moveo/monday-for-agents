@@ -32,6 +32,9 @@ Thumbs.db
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+*.db
+*.db-shm
+*.db-wal
 
 # Test / Coverage
 htmlcov/

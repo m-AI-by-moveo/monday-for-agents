@@ -97,7 +97,6 @@ const app = new App({
 // so it can receive googleServices + meetingStore deps)
 // ---------------------------------------------------------------------------
 
-registerThreadHandler(app);
 registerCreateTaskActions(app);
 registerTaskPreviewActions(app);
 
@@ -231,8 +230,9 @@ if (process.env.GOOGLE_CLIENT_ID) {
     );
   }
 
-  // Register mention handler with deps (must happen after googleServices/meetingStore init)
+  // Register mention + thread handlers with deps (must happen after googleServices/meetingStore init)
   registerMentionHandler(app, { googleServices, meetingStore });
+  registerThreadHandler(app, { googleServices, meetingStore });
 
   if (schedulerConfig.enabled) {
     const scheduler = createSchedulerService({
