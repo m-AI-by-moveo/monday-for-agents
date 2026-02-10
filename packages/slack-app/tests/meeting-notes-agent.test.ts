@@ -130,6 +130,7 @@ describe("MeetingNotesAgent", () => {
     );
 
     expect(result.actionItems).toHaveLength(0);
-    expect(result.summary).toContain("Failed");
+    // Falls back to raw text as summary when JSON parsing fails
+    expect(result.summary).toContain("not valid JSON");
   });
 });

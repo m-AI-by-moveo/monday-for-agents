@@ -74,14 +74,25 @@ export class MeetingNotesAgent {
     }
 
     try {
-      const parsed = JSON.parse(textBlock.text);
+      // Strip markdown code fences if present (```json ... ```)
+      let jsonText = textBlock.text.trim();
+      if (jsonText.startsWith("```")) {
+        jsonText = jsonText.replace(/^```(?:json)?\s*/, "").replace(/\s*```$/, "");
+      }
+
+      const parsed = JSON.parse(jsonText);
       return {
         summary: parsed.summary ?? "",
         actionItems: Array.isArray(parsed.actionItems) ? parsed.actionItems : [],
         decisions: Array.isArray(parsed.decisions) ? parsed.decisions : [],
       };
     } catch {
-      return { summary: "Failed to parse analysis.", actionItems: [], decisions: [] };
+      // Return raw text as summary if JSON parsing fails
+      return {
+        summary: textBlock.text.substring(0, 500),
+        actionItems: [],
+        decisions: [],
+      };
     }
   }
 }
