@@ -212,7 +212,7 @@ describe("MeetingSyncService", () => {
     expect(result.meetingsFound).toBe(0);
   });
 
-  it("auto-dismisses meetings with no action items", async () => {
+  it("posts summary even when no action items are detected", async () => {
     google.__setMockEvents([
       {
         id: "evt-4",
@@ -241,8 +241,8 @@ describe("MeetingSyncService", () => {
     const result = await service.checkRecentMeetings("U_ADMIN");
 
     expect(result.transcriptsFound).toBe(1);
-    expect(result.previewsPosted).toBe(0);
-    expect(result.skipped).toBe(1);
+    expect(result.previewsPosted).toBe(1);
+    expect(slackClient.chat.postMessage).toHaveBeenCalledOnce();
     expect(store.isProcessed("evt-4")).toBe(true);
   });
 });

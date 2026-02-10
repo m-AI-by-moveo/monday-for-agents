@@ -37,7 +37,7 @@ export function registerActions(
       // Fall through — will report error
     }
 
-    if (!analysis || analysis.actionItems.length === 0) {
+    if (!analysis) {
       if (channel && messageTs) {
         await client.chat.update({
           channel,
@@ -50,17 +50,30 @@ export function registerActions(
     }
 
     // Build a task creation prompt for the product-owner agent
-    const taskLines = analysis.actionItems.map((item, i) => {
-      let line = `${i + 1}. ${item.title}: ${item.description}`;
-      if (item.assignee) line += ` (assign to: ${item.assignee})`;
-      if (item.priority) line += ` [priority: ${item.priority}]`;
-      if (item.deadline) line += ` [deadline: ${item.deadline}]`;
-      return line;
-    });
+    let prompt: string;
+    if (analysis.actionItems.length > 0) {
+      const taskLines = analysis.actionItems.map((item, i) => {
+        let line = `${i + 1}. ${item.title}: ${item.description}`;
+        if (item.assignee) line += ` (assign to: ${item.assignee})`;
+        if (item.priority) line += ` [priority: ${item.priority}]`;
+        if (item.deadline) line += ` [deadline: ${item.deadline}]`;
+        return line;
+      });
 
-    const prompt =
-      `Create the following tasks on the board from meeting action items:\n\n` +
-      taskLines.join("\n");
+      prompt =
+        `Create the following tasks on the board from meeting action items:\n\n` +
+        taskLines.join("\n");
+    } else {
+      // No action items detected but user wants to create tasks from context
+      const parts = [`Meeting summary: ${analysis.summary}`];
+      if (analysis.decisions.length > 0) {
+        parts.push(`Key decisions:\n${analysis.decisions.map((d) => `- ${d}`).join("\n")}`);
+      }
+      prompt =
+        `The following meeting had no explicit action items, but the user wants to create tasks based on the context. ` +
+        `Review the meeting notes and create appropriate follow-up tasks on the board:\n\n` +
+        parts.join("\n\n");
+    }
 
     const a2a = createA2AClient();
     const poUrl = AGENT_URLS["product-owner"];

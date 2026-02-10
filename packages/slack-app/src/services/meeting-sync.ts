@@ -94,12 +94,6 @@ export class MeetingSyncService {
             meetingTitle,
           );
 
-          if (analysis.actionItems.length === 0) {
-            this.meetingStore.markDismissed(eventId, meetingTitle);
-            result.skipped++;
-            continue;
-          }
-
           this.meetingStore.markPending(eventId, meetingTitle);
 
           const { blocks, text } = meetingPreviewBlocks(

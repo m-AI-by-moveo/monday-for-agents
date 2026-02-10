@@ -122,31 +122,37 @@ export function meetingPreviewBlocks(
         emoji: true,
       },
     },
+    { type: "divider" },
     {
       type: "section",
-      text: { type: "mrkdwn", text: analysis.summary },
+      text: {
+        type: "mrkdwn",
+        text: `*Summary*\n${analysis.summary}`,
+      },
     },
   ];
 
   if (analysis.decisions.length > 0) {
+    blocks.push({ type: "divider" });
     blocks.push({
       type: "section",
       text: {
         type: "mrkdwn",
         text:
-          "*Key Decisions*\n" +
-          analysis.decisions.map((d) => `• ${d}`).join("\n"),
+          `:bulb: *Key Decisions*\n` +
+          analysis.decisions.map((d) => `> ${d}`).join("\n"),
       },
     });
   }
 
   if (analysis.actionItems.length > 0) {
+    blocks.push({ type: "divider" });
     const lines = analysis.actionItems.map((item, i) => {
       let line = `${i + 1}. *${item.title}*`;
       if (item.assignee) line += ` — _${item.assignee}_`;
-      if (item.priority) line += ` [${item.priority}]`;
-      if (item.deadline) line += ` (due: ${item.deadline})`;
-      line += `\n    ${item.description}`;
+      if (item.priority) line += `  \`${item.priority}\``;
+      if (item.deadline) line += `  :calendar: ${item.deadline}`;
+      line += `\n     ${item.description}`;
       return line;
     });
 
@@ -154,17 +160,28 @@ export function meetingPreviewBlocks(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: "*Action Items*\n" + lines.join("\n"),
+        text: `:clipboard: *Action Items* (${analysis.actionItems.length})\n` + lines.join("\n"),
+      },
+    });
+  } else {
+    blocks.push({ type: "divider" });
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `:clipboard: *Action Items*\n_No action items detected — click *Create Tasks* if you see something worth tracking._`,
       },
     });
   }
+
+  blocks.push({ type: "divider" });
 
   blocks.push({
     type: "actions",
     elements: [
       {
         type: "button",
-        text: { type: "plain_text", text: "Create Tasks", emoji: true },
+        text: { type: "plain_text", text: ":white_check_mark: Create Tasks", emoji: true },
         style: "primary",
         action_id: "meeting_approve",
         value: eventId,
@@ -188,6 +205,9 @@ export function meetingPreviewBlocks(
     ],
   });
 
-  const text = `Meeting Notes — ${meetingTitle}: ${analysis.actionItems.length} action item(s)`;
+  const actionCount = analysis.actionItems.length;
+  const text = actionCount > 0
+    ? `Meeting Notes — ${meetingTitle}: ${actionCount} action item(s)`
+    : `Meeting Notes — ${meetingTitle}`;
   return { blocks, text };
 }
