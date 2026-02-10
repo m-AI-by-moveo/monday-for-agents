@@ -144,9 +144,12 @@ export class MeetingSyncService {
       const drive = google.drive({ version: "v3", auth: authClient });
 
       const escapedTitle = meetingTitle.replace(/'/g, "\\'");
+
+      // Google Meet transcripts are named: "<title> - <date> - Transcript"
+      // Search by title in name + "Transcript" suffix
       const query =
-        `name contains 'transcript' and ` +
-        `fullText contains '${escapedTitle}' and ` +
+        `name contains '${escapedTitle}' and ` +
+        `name contains 'Transcript' and ` +
         `mimeType = 'application/vnd.google-apps.document' and ` +
         `trashed = false`;
 
